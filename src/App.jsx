@@ -175,6 +175,21 @@ function canModerate(profile, mode) {
 const quickTags = ['🪑 Ta med pute', '🧥 Kle deg varmt', '🧇 Kiosk verdt køen', '🥶 Kaldere enn forventet', '👀 God sikt', '🅿️ Lett parkering'];
 const SAVED_VENUES_KEY = 'tribunesliter.savedVenues.v1';
 const INSTALL_HINT_DISMISSED_KEY = 'tribunesliter.installHint.dismissed.v1';
+const APP_REQUEST_TIMEOUT_MS = 12000;
+
+function timeoutAfter(message, ms = APP_REQUEST_TIMEOUT_MS) {
+  return new Promise((_, reject) => {
+    window.setTimeout(() => reject(new Error(message)), ms);
+  });
+}
+
+function withTimeout(promise, message, ms) {
+  return Promise.race([promise, timeoutAfter(message, ms)]);
+}
+
+function errorMessage(error) {
+  return error?.message || 'Ukjent feil.';
+}
 
 export default function App() {
   const [view, setView] = useState('home');
@@ -214,15 +229,35 @@ export default function App() {
     let mounted = true;
     async function boot() {
       try {
-        const [session, venueRows] = await Promise.all([getSession(), fetchVenues()]);
+        const [sessionResult, venuesResult] = await Promise.allSettled([
+          withTimeout(getSession(), 'Innlogging tok for lang tid. Prøv å oppdatere siden.'),
+          withTimeout(fetchVenues(), 'Klarte ikke hente haller fra Supabase. Sjekk nettverk eller prøv igjen.'),
+        ]);
         if (!mounted) return;
-        setUser(session.user || getDemoUser());
-        setProfile(session.profile || null);
-        setMode(session.mode);
-        setVenues(venueRows);
-        setSelectedVenueId((current) => current || venueRows[0]?.id || null);
+
+        const notices = [];
+        if (sessionResult.status === 'fulfilled') {
+          setUser(sessionResult.value.user || getDemoUser());
+          setProfile(sessionResult.value.profile || null);
+          setMode(sessionResult.value.mode);
+        } else {
+          setUser(getDemoUser());
+          setProfile(null);
+          notices.push(errorMessage(sessionResult.reason));
+        }
+
+        if (venuesResult.status === 'fulfilled') {
+          const venueRows = venuesResult.value;
+          setVenues(venueRows);
+          setSelectedVenueId((current) => current || venueRows[0]?.id || null);
+        } else {
+          setVenues([]);
+          notices.push(errorMessage(venuesResult.reason));
+        }
+
+        if (notices.length) setNotice(notices.join(' '));
       } catch (error) {
-        setNotice(error.message);
+        setNotice(errorMessage(error));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -310,9 +345,9 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedVenue?.id) return;
-    fetchReviews(selectedVenue.id)
+    withTimeout(fetchReviews(selectedVenue.id), 'Klarte ikke hente vurderinger akkurat nå.')
       .then(setReviews)
-      .catch((error) => setNotice(error.message));
+      .catch((error) => setNotice(errorMessage(error)));
   }, [selectedVenue?.id]);
 
   function go(nextView, venueId) {
