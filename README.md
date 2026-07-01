@@ -111,7 +111,8 @@ VITE_SUPABASE_ANON_KEY=din-public-anon-key
 VITE_APP_URL=http://localhost:5173
 ```
 
-6. Start appen på nytt:
+6. Gå til Authentication -> Providers -> Email i Supabase og slå av e-postbekreftelse / Confirm email. Appen bruker brukernavn + passord med en intern adresse som `brukernavn@tribunesliter.local`, så bekreftelsesmail kan ikke brukes.
+7. Start appen på nytt:
 
 ```bash
 npm run dev
@@ -119,7 +120,7 @@ npm run dev
 
 ## Første admin
 
-Logg inn én gang med e-post i appen, slik at Supabase oppretter en rad i `profiles`.
+Opprett en bruker i appen med brukernavn og passord, slik at Supabase oppretter en rad i `profiles`.
 
 Kjør deretter i Supabase SQL Editor:
 

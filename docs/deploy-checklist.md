@@ -11,10 +11,12 @@ npm run check
 npm run build
 ```
 
-3. Åpne `dist/` via `npm run preview` og test:
+3. Kontroller i Supabase at Authentication -> Providers -> Email ikke krever e-postbekreftelse / Confirm email. Brukernavn-flyten bruker interne adresser som `brukernavn@tribunesliter.local`.
+4. Åpne `dist/` via `npm run preview` og test:
    - forside
    - hallprofil
-   - innlogging
+   - opprett bruker med brukernavn/passord
+   - innlogging med brukernavn/passord
    - vurdering til moderering
    - rett-info til moderering
    - lagre/fjerne hall
@@ -72,7 +74,7 @@ VITE_SUPABASE_ANON_KEY=...
 ## Etter deploy
 
 1. Åpne produksjonslenken på mobil.
-2. Logg inn med magic link.
+2. Opprett/logg inn med brukernavn og passord.
 3. Send inn testvurdering.
 4. Godkjenn i moderatorpanelet.
 5. Sjekk at vurderingen vises for andre enheter.

@@ -77,7 +77,9 @@ function usernameForMetadata(username) {
 
 function authErrorMessage(error) {
   const message = String(error?.message || '');
-  if (/invalid login credentials/i.test(message)) return 'Feil brukernavn eller passord.';
+  if (/invalid login credentials/i.test(message)) {
+    return 'Feil brukernavn/passord, eller brukeren er opprettet mens e-postbekreftelse var på. Slå av Email confirmations i Supabase, slett den ubekreftede brukeren i Auth > Users, og opprett den på nytt.';
+  }
   if (/user already registered|already registered|already exists/i.test(message)) return 'Brukernavnet er allerede i bruk.';
   if (/password/i.test(message)) return 'Passordet må være minst 6 tegn.';
   return error?.message || 'Innloggingen feilet.';

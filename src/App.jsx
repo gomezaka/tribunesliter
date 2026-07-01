@@ -456,7 +456,7 @@ export default function App() {
       if (result.needsConfirmation) {
         setUser(null);
         setProfile(null);
-        setNotice('Brukeren er opprettet, men Supabase krever e-postbekreftelse. Slå av e-postbekreftelse for brukernavn-flyt.');
+        setNotice('Brukeren ble opprettet uten aktiv innlogging fordi Supabase krever e-postbekreftelse. Slå av Email confirmations, slett denne ubekreftede brukeren i Auth > Users, og opprett den på nytt.');
       } else {
         setNotice(authMode === 'signup' ? 'Bruker opprettet og innlogget.' : 'Du er logget inn.');
       }
