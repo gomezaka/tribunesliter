@@ -1,8 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="118" fill="#ff7a1a"/>
-  <circle cx="158" cy="204" r="82" fill="#fff2e7"/>
-  <circle cx="354" cy="204" r="82" fill="#fff2e7"/>
-  <path d="M96 252c28 96 98 146 160 146s132-50 160-146c-43 36-96 54-160 54s-117-18-160-54Z" fill="#1f2430"/>
-  <path d="M132 129c26-38 70-54 112-41" fill="none" stroke="#1f2430" stroke-width="22" stroke-linecap="round"/>
-  <path d="M380 129c-26-38-70-54-112-41" fill="none" stroke="#1f2430" stroke-width="22" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Tribunesliter gladrompe-ikon">
+  <rect width="512" height="512" rx="118" fill="#F4F6F2"/>
+  <rect x="48" y="48" width="416" height="416" rx="96" fill="#E8F0E8" stroke="#0E6B4B" stroke-width="24"/>
+  <path d="M150 178c0-42 32-74 76-74h60c44 0 76 32 76 74v44c32 24 52 64 52 110 0 73-46 122-113 122-23 0-40-7-45-28-5 21-22 28-45 28-67 0-113-49-113-122 0-46 20-86 52-110v-44Z" fill="#FFF4D6" stroke="#063E3B" stroke-width="20" stroke-linejoin="round"/>
+  <path d="M176 190c45-23 115-23 160 0" fill="none" stroke="#FF9B19" stroke-width="26" stroke-linecap="round"/>
+  <path d="M176 190c45-23 115-23 160 0" fill="none" stroke="#063E3B" stroke-width="12" stroke-linecap="round"/>
+  <path d="M210 286c18 24 74 24 92 0" fill="none" stroke="#063E3B" stroke-width="22" stroke-linecap="round"/>
+  <path d="M211 252c7-22 36-22 44 0M257 252c8-22 37-22 44 0" fill="none" stroke="#063E3B" stroke-width="16" stroke-linecap="round"/>
+  <path d="M256 346v62" fill="none" stroke="#063E3B" stroke-width="14" stroke-linecap="round"/>
+  <path d="M112 210l-30-25M98 260l-40-10M400 210l30-25M414 260l40-10" stroke="#FF9B19" stroke-width="18" stroke-linecap="round"/>
 </svg>
