@@ -701,32 +701,18 @@ export default function App() {
   );
 }
 
-function Header({ user, profile, mode, onHome, onProfile }) {
-  const initials = (profile?.display_name || user?.email || 'TS')
-    .split(/[@\s._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || 'TS';
-  const label = mode === 'demo' ? 'DEMO' : user ? (profile?.role || 'BRUKER') : 'LOGG INN';
+function Header({ onHome }) {
   return (
     <header className="topbar">
       <div className="brand-stack">
         <button className="brand-button" type="button" onClick={onHome} aria-label="Til forsiden">
-          <span className="brand-mark" aria-hidden="true">🍑</span>
-          <span className="brand-copy">
-            <span className="wordmark">Tribunesliter</span>
-            <span className="brand-kicker">Sporty hallguide</span>
-          </span>
+          <img className="brand-banner" src="/assets/tribunesliter-banner.png" alt="Tribunesliter" />
         </button>
         <button className="region-pill" type="button" onClick={onHome} aria-label="Velg region">
           <span>Din region</span>
           <strong>Viken</strong>
         </button>
       </div>
-      <button className="avatar-pill" type="button" onClick={onProfile} title={label}>
-        {initials}
-      </button>
     </header>
   );
 }
@@ -1508,7 +1494,7 @@ function ThanksView({ venue, onHome, onVenue }) {
   return (
     <section className="screen center-screen">
       <div className="success-card app-card">
-        <div className="thanks-icon">🍑</div>
+        <img className="thanks-icon" src="/assets/glad-rumpe-icon.png" alt="" aria-hidden="true" />
         <span className="tag tag--green">🏅 +10 sliter-poeng</span>
         <h1>Numsen din er logget!</h1>
         <p>{venue ? `Bidraget ditt ligger til moderering for ${venue.name}.` : 'Bidraget ditt ligger til moderering.'}</p>
@@ -1782,7 +1768,7 @@ function ModerationReviewCard({ review, visible = false, busy, onApprove, onReje
 function EmptyState({ title, text, action, onAction }) {
   return (
     <div className="empty-state">
-      <div>🍑</div>
+      <img className="empty-icon" src="/assets/glad-rumpe-icon.png" alt="" aria-hidden="true" />
       <strong>{title}</strong>
       <p>{text}</p>
       {action && <button type="button" onClick={onAction}>{action}</button>}
