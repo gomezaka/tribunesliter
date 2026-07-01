@@ -196,8 +196,19 @@ function withTimeout(promise, message, ms) {
   return Promise.race([promise, timeoutAfter(message, ms)]);
 }
 
-function errorMessage(error) {
-  return error?.message || 'Ukjent feil.';
+function errorMessage(error, fallback = 'Ukjent feil.') {
+  const candidates = [
+    typeof error === 'string' ? error : '',
+    error?.message,
+    error?.error_description,
+    error?.msg,
+  ];
+
+  for (const candidate of candidates) {
+    const message = String(candidate || '').trim();
+    if (message && message !== '{}' && message !== '[]' && message !== '[object Object]') return message;
+  }
+  return fallback;
 }
 
 export default function App() {
@@ -212,6 +223,7 @@ export default function App() {
   const [sortMode, setSortMode] = useState('score');
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [mode, setMode] = useState(hasSupabaseConfig ? 'supabase' : 'demo');
@@ -446,6 +458,8 @@ export default function App() {
   }
 
   async function handleLogin({ username, password, authMode }) {
+    setAuthBusy(true);
+    setNotice(authMode === 'signup' ? 'Oppretter bruker...' : 'Logger inn...');
     try {
       const action = authMode === 'signup' ? signUpWithUsernamePassword : signInWithUsernamePassword;
       const result = await action(username, password);
@@ -462,7 +476,9 @@ export default function App() {
         setNotice(authMode === 'signup' ? 'Bruker opprettet og innlogget.' : 'Du er logget inn.');
       }
     } catch (error) {
-      setNotice(error.message);
+      setNotice(errorMessage(error, 'Vi klarte ikke å fullføre handlingen akkurat nå. Prøv igjen litt senere.'));
+    } finally {
+      setAuthBusy(false);
     }
   }
 
@@ -494,7 +510,7 @@ export default function App() {
       setNotice(hasSupabaseConfig ? 'Vurderingen er sendt til moderering.' : 'Vurderingen er lagt i modereringskø i demoen.');
       go('thanks', targetVenueId);
     } catch (error) {
-      setNotice(error.message);
+      setNotice(errorMessage(error));
     }
   }
 
@@ -517,7 +533,7 @@ export default function App() {
       setNotice('Fasilitetsrapporten er sendt til moderering.');
       go('venue', targetVenueId);
     } catch (error) {
-      setNotice(error.message);
+      setNotice(errorMessage(error));
     }
   }
 
@@ -535,7 +551,7 @@ export default function App() {
       setNotice('Forslaget er lagret og må godkjennes før det vises offentlig.');
       go('home');
     } catch (error) {
-      setNotice(error.message);
+      setNotice(errorMessage(error));
     }
   }
 
@@ -548,7 +564,7 @@ export default function App() {
       await refreshModeration();
       go('admin');
     } catch (error) {
-      setNotice(error.message);
+      setNotice(errorMessage(error));
     }
   }
 
@@ -561,7 +577,7 @@ export default function App() {
       if (selectedVenue?.id) setReviews(await fetchReviews(selectedVenue.id));
       setNotice(successMessage);
     } catch (error) {
-      setNotice(error.message);
+      setNotice(errorMessage(error));
     } finally {
       setAdminBusy('');
     }
@@ -574,7 +590,7 @@ export default function App() {
       <section className={cx('phone-frame', isDetail && 'phone-frame--detail')} aria-label="Tribunesliter mobilapp">
         <Header user={user} profile={profile} mode={mode} onHome={() => go('home')} onProfile={() => go('profile')} />
 
-        {notice && (
+        {notice && view !== 'profile' && (
           <button className="notice" type="button" onClick={() => setNotice('')}>
             {notice}
           </button>
@@ -676,12 +692,15 @@ export default function App() {
                 profile={profile}
                 mode={mode}
                 canModerate={canModerate(profile, mode)}
+                notice={notice}
+                authBusy={authBusy}
                 onLogin={handleLogin}
                 onLogout={handleLogout}
                 onAdmin={loadModeration}
                 onInstall={installApp}
                 canInstall={Boolean(installPrompt)}
                 installHintDismissed={installHintDismissed}
+                onDismissNotice={() => setNotice('')}
                 onDismissInstall={dismissInstallHint}
               />
             )}
@@ -1521,7 +1540,7 @@ function ThanksView({ venue, onHome, onVenue }) {
   );
 }
 
-function ProfileView({ user, profile, mode, canModerate, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissInstall }) {
+function ProfileView({ user, profile, mode, canModerate, notice, authBusy, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissNotice, onDismissInstall }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState('login');
@@ -1584,7 +1603,12 @@ function ProfileView({ user, profile, mode, canModerate, onLogin, onLogout, onAd
             <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength="6" required />
           </label>
           <p className="micro-copy">Brukernavn: 3-24 tegn med bokstaver, tall, punktum, bindestrek eller understrek.</p>
-          <button className="primary-action" type="submit">{authMode === 'signup' ? 'Opprett bruker' : 'Logg inn'}</button>
+          <button className="primary-action" type="submit" disabled={authBusy}>{authBusy ? (authMode === 'signup' ? 'Oppretter...' : 'Logger inn...') : (authMode === 'signup' ? 'Opprett bruker' : 'Logg inn')}</button>
+          {notice && (
+            <button className="auth-status" type="button" onClick={onDismissNotice} role="status" aria-live="polite">
+              {notice}
+            </button>
+          )}
         </form>
       )}
     </section>

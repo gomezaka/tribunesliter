@@ -75,8 +75,23 @@ function usernameForMetadata(username) {
   return normalized.includes('@') ? normalized.split('@')[0] : normalized;
 }
 
+function readableErrorMessage(error) {
+  const candidates = [
+    typeof error === 'string' ? error : '',
+    error?.message,
+    error?.error_description,
+    error?.msg,
+  ];
+
+  for (const candidate of candidates) {
+    const message = String(candidate || '').trim();
+    if (message && message !== '{}' && message !== '[]' && message !== '[object Object]') return message;
+  }
+  return '';
+}
+
 function authErrorMessage(error) {
-  const message = String(error?.message || '');
+  const message = readableErrorMessage(error);
   if (/email.*rate|rate.*email|rate limit|over email send rate limit|email rate limit/i.test(message)) {
     return 'Vi klarte ikke å opprette brukeren akkurat nå. Prøv igjen litt senere, eller kontakt administrator.';
   }
@@ -85,7 +100,7 @@ function authErrorMessage(error) {
   }
   if (/user already registered|already registered|already exists/i.test(message)) return 'Brukernavnet er allerede i bruk.';
   if (/password/i.test(message)) return 'Passordet må være minst 6 tegn.';
-  return error?.message || 'Innloggingen feilet.';
+  return message || 'Vi klarte ikke å fullføre innloggingen akkurat nå. Prøv igjen litt senere.';
 }
 
 async function fetchProfileForUser(userId) {

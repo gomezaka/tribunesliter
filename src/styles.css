@@ -815,6 +815,16 @@ input[type="range"] { accent-color: var(--amber); padding: 0; border: 0; box-sha
   color: var(--primary-dark);
   box-shadow: 0 4px 14px rgba(13, 42, 31, .08);
 }
+.auth-status {
+  width: 100%;
+  border: 1px solid #CDE3D8;
+  border-radius: 13px;
+  background: var(--primary-tint);
+  color: var(--primary-dark);
+  padding: 11px 12px;
+  text-align: left;
+  font: 800 12px/1.35 Manrope;
+}
 
 .admin-hero { padding: 16px; display: grid; gap: 10px; }
 .admin-hero h1 { margin: 0; font: 900 28px/1.05 Archivo; }
