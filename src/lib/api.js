@@ -77,8 +77,11 @@ function usernameForMetadata(username) {
 
 function authErrorMessage(error) {
   const message = String(error?.message || '');
+  if (/email.*rate|rate.*email|rate limit|over email send rate limit|email rate limit/i.test(message)) {
+    return 'Vi klarte ikke å opprette brukeren akkurat nå. Prøv igjen litt senere, eller kontakt administrator.';
+  }
   if (/invalid login credentials/i.test(message)) {
-    return 'Feil brukernavn/passord, eller brukeren er opprettet mens e-postbekreftelse var på. Slå av Email confirmations i Supabase, slett den ubekreftede brukeren i Auth > Users, og opprett den på nytt.';
+    return 'Feil brukernavn eller passord. Hvis kontoen nettopp ble opprettet, kan den fortsatt være under klargjøring.';
   }
   if (/user already registered|already registered|already exists/i.test(message)) return 'Brukernavnet er allerede i bruk.';
   if (/password/i.test(message)) return 'Passordet må være minst 6 tegn.';
@@ -157,6 +160,7 @@ export async function signInWithUsernamePassword(username, password) {
     const profile = data.user ? await fetchProfileForUser(data.user.id) : null;
     return { demo: false, user: data.user, profile };
   } catch (error) {
+    console.warn('Supabase sign-in failed:', error);
     throw new Error(authErrorMessage(error));
   }
 }
@@ -190,6 +194,7 @@ export async function signUpWithUsernamePassword(username, password) {
       : null;
     return { demo: false, user: data.user, profile, needsConfirmation: Boolean(data.user && !data.session) };
   } catch (error) {
+    console.warn('Supabase sign-up failed:', error);
     throw new Error(authErrorMessage(error));
   }
 }

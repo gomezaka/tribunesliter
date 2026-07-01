@@ -122,6 +122,15 @@ npm run dev
 
 Opprett en bruker i appen med brukernavn og passord, slik at Supabase oppretter en rad i `profiles`.
 
+Hvis du fikk `email rate exceeded`, eller brukeren ble opprettet før e-postbekreftelse ble slått av, kan brukeren ligge i Auth som ubekreftet. Slå først av e-postbekreftelse under Authentication -> Providers -> Email. Slett deretter brukeren i Authentication -> Users og opprett den på nytt, eller bekreft brukeren manuelt i SQL:
+
+```sql
+update auth.users
+set email_confirmed_at = coalesce(email_confirmed_at, now()),
+    updated_at = now()
+where email = 'dittbrukernavn@tribunesliter.local';
+```
+
 Kjør deretter i Supabase SQL Editor:
 
 ```sql
