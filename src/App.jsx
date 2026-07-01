@@ -678,7 +678,10 @@ function Header({ user, profile, mode, onHome, onProfile }) {
       <div className="brand-stack">
         <button className="brand-button" type="button" onClick={onHome} aria-label="Til forsiden">
           <span className="brand-mark" aria-hidden="true">🍑</span>
-          <span className="wordmark">Tribunesliter</span>
+          <span className="brand-copy">
+            <span className="wordmark">Tribunesliter</span>
+            <span className="brand-kicker">Sporty hallguide</span>
+          </span>
         </button>
         <button className="region-pill" type="button" onClick={onHome} aria-label="Velg region">
           <span>Din region</span>

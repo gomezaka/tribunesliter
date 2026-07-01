@@ -93,23 +93,36 @@ button:disabled { opacity: .55; cursor: progress; }
 .brand-button {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   width: max-content;
 }
 .brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
-  background: var(--primary);
+  width: 38px;
+  height: 38px;
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 34% 22%, rgba(255,255,255,.75), rgba(255,255,255,0) 26%),
+    linear-gradient(145deg, var(--primary) 0%, var(--primary-dark) 58%, #063B2A 100%);
   color: #fff;
   display: grid;
   place-items: center;
-  font-size: 18px;
-  box-shadow: 0 8px 18px -12px rgba(14,107,75,.75);
+  font-size: 19px;
+  box-shadow: 0 10px 22px -13px rgba(14,107,75,.9);
+}
+.brand-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 .wordmark {
   font: 900 20px/1 Archivo;
   letter-spacing: -.6px;
+}
+.brand-kicker {
+  color: var(--muted);
+  font: 800 10px/1 Manrope;
+  letter-spacing: .14em;
+  text-transform: uppercase;
 }
 .region-pill {
   display: grid;
