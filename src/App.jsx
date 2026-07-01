@@ -14,13 +14,17 @@ import {
   rejectFacilityReport,
   rejectReview,
   rejectVenueRequest,
-  signInWithEmail,
+  signInWithUsernamePassword,
   signOut,
+  signUpWithUsernamePassword,
   submitFacilityReport,
   submitReview,
   submitVenueRequest,
 } from './lib/api';
 import { categories } from './lib/demoData';
+
+const ICON_VERSION = '20260701-gladrompe';
+const GLAD_RUMPE_ICON_SRC = `/assets/glad-rumpe-icon.png?v=${ICON_VERSION}`;
 
 function makeEmptyReview() {
   return {
@@ -83,6 +87,10 @@ const emptyVenueRequest = {
 
 function cx(...parts) {
   return parts.filter(Boolean).join(' ');
+}
+
+function userDisplayName(user, profile, fallback = 'tribunesliter') {
+  return profile?.display_name || profile?.username || user?.user_metadata?.display_name || user?.user_metadata?.username || user?.email?.split('@')[0] || fallback;
 }
 
 function shortDate(date) {
@@ -437,14 +445,21 @@ export default function App() {
     return rows;
   }
 
-  async function handleLogin(email) {
+  async function handleLogin({ username, password, authMode }) {
     try {
-      const result = await signInWithEmail(email);
-      if (result.demo) {
+      const action = authMode === 'signup' ? signUpWithUsernamePassword : signInWithUsernamePassword;
+      const result = await action(username, password);
+      if (result.user && !result.needsConfirmation) {
         setUser(result.user);
         setProfile(result.profile);
       }
-      setNotice(hasSupabaseConfig ? 'Sjekk e-posten din for innloggingslenke.' : 'Demo-innlogging aktivert lokalt.');
+      if (result.needsConfirmation) {
+        setUser(null);
+        setProfile(null);
+        setNotice('Brukeren er opprettet, men Supabase krever e-postbekreftelse. Slå av e-postbekreftelse for brukernavn-flyt.');
+      } else {
+        setNotice(authMode === 'signup' ? 'Bruker opprettet og innlogget.' : 'Du er logget inn.');
+      }
     } catch (error) {
       setNotice(error.message);
     }
@@ -720,7 +735,7 @@ function Header({ onHome }) {
 function LoadingView() {
   return (
     <section className="screen center-screen">
-      <div className="loader skeleton-peach">🍑</div>
+      <img className="loader loader--app-icon" src={GLAD_RUMPE_ICON_SRC} alt="" aria-hidden="true" />
       <h1>Laster Tribunesliter</h1>
       <p>Henter haller, tribuner og rumpe-rapporter.</p>
       <div className="skeleton-list" aria-hidden="true"><span /><span /><span /></div>
@@ -729,7 +744,7 @@ function LoadingView() {
 }
 
 function HomeView({ venues, recentVenues, user, profile, onSearch, onVenue, onNewVenue }) {
-  const displayName = profile?.display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'tribunesliter';
+  const displayName = userDisplayName(user, profile);
   const firstName = displayName.split(/\s+/)[0] || 'tribunesliter';
   const topVenues = [...venues].sort((a, b) => scoreFromMinutes(b.tribunesliter_minutes) - scoreFromMinutes(a.tribunesliter_minutes)).slice(0, 5);
   const reportedVenues = [...venues]
@@ -1494,7 +1509,7 @@ function ThanksView({ venue, onHome, onVenue }) {
   return (
     <section className="screen center-screen">
       <div className="success-card app-card">
-        <img className="thanks-icon" src="/assets/glad-rumpe-icon.png" alt="" aria-hidden="true" />
+        <img className="thanks-icon" src={GLAD_RUMPE_ICON_SRC} alt="" aria-hidden="true" />
         <span className="tag tag--green">🏅 +10 sliter-poeng</span>
         <h1>Numsen din er logget!</h1>
         <p>{venue ? `Bidraget ditt ligger til moderering for ${venue.name}.` : 'Bidraget ditt ligger til moderering.'}</p>
@@ -1506,7 +1521,10 @@ function ThanksView({ venue, onHome, onVenue }) {
 }
 
 function ProfileView({ user, profile, mode, canModerate, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissInstall }) {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [authMode, setAuthMode] = useState('login');
+  const displayName = userDisplayName(user, profile, 'demo-bruker');
 
   return (
     <section className="screen">
@@ -1542,7 +1560,7 @@ function ProfileView({ user, profile, mode, canModerate, onLogin, onLogout, onAd
 
       {user ? (
         <div className="form-card app-card">
-          <p>Innlogget som <strong>{user.email || user.user_metadata?.display_name || profile?.display_name || 'demo-bruker'}</strong></p>
+          <p>Innlogget som <strong>{displayName}</strong></p>
           <button className="secondary-action" type="button" onClick={onLogout}>Logg ut</button>
           {canModerate ? (
             <button className="primary-action" type="button" onClick={onAdmin}>Åpne moderering</button>
@@ -1551,12 +1569,21 @@ function ProfileView({ user, profile, mode, canModerate, onLogin, onLogout, onAd
           )}
         </div>
       ) : (
-        <form className="form-card app-card" onSubmit={(event) => { event.preventDefault(); onLogin(email); }}>
+        <form className="form-card app-card" onSubmit={(event) => { event.preventDefault(); onLogin({ username, password, authMode }); }}>
+          <div className="auth-toggle" role="tablist" aria-label="Innloggingstype">
+            <button className={cx(authMode === 'login' && 'active')} type="button" onClick={() => setAuthMode('login')}>Logg inn</button>
+            <button className={cx(authMode === 'signup' && 'active')} type="button" onClick={() => setAuthMode('signup')}>Opprett</button>
+          </div>
           <label>
-            E-post
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="navn@eksempel.no" required />
+            Brukernavn
+            <input value={username} onChange={(event) => setUsername(event.target.value)} type="text" inputMode="text" autoCapitalize="none" autoComplete="username" placeholder="f.eks. tribunekonge" required />
           </label>
-          <button className="primary-action" type="submit">Send innloggingslenke</button>
+          <label>
+            Passord
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength="6" required />
+          </label>
+          <p className="micro-copy">Brukernavn: 3-24 tegn med bokstaver, tall, punktum, bindestrek eller understrek.</p>
+          <button className="primary-action" type="submit">{authMode === 'signup' ? 'Opprett bruker' : 'Logg inn'}</button>
         </form>
       )}
     </section>
@@ -1768,7 +1795,7 @@ function ModerationReviewCard({ review, visible = false, busy, onApprove, onReje
 function EmptyState({ title, text, action, onAction }) {
   return (
     <div className="empty-state">
-      <img className="empty-icon" src="/assets/glad-rumpe-icon.png" alt="" aria-hidden="true" />
+      <img className="empty-icon" src={GLAD_RUMPE_ICON_SRC} alt="" aria-hidden="true" />
       <strong>{title}</strong>
       <p>{text}</p>
       {action && <button type="button" onClick={onAction}>{action}</button>}

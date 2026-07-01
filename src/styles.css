@@ -749,6 +749,7 @@ input[type="range"] { accent-color: var(--amber); padding: 0; border: 0; box-sha
 
 .center-screen { min-height: calc(100vh - 190px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .loader { width: 86px; height: 86px; display: grid; place-items: center; border-radius: 26px; background: var(--amber); font-size: 44px; box-shadow: var(--shadow-fab); margin-bottom: 16px; }
+.loader--app-icon { background: transparent; object-fit: cover; }
 .thanks-icon, .empty-icon {
   width: 92px;
   height: 92px;
@@ -793,6 +794,27 @@ input[type="range"] { accent-color: var(--amber); padding: 0; border: 0; box-sha
 .mode-card span, .role-card span { color: var(--muted); font-weight: 700; }
 .role-card { display: flex; align-items: center; justify-content: space-between; }
 .role-card strong { text-transform: uppercase; }
+.auth-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--neutral-chip);
+}
+.auth-toggle button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 900;
+}
+.auth-toggle button.active {
+  background: #fff;
+  color: var(--primary-dark);
+  box-shadow: 0 4px 14px rgba(13, 42, 31, .08);
+}
 
 .admin-hero { padding: 16px; display: grid; gap: 10px; }
 .admin-hero h1 { margin: 0; font: 900 28px/1.05 Archivo; }

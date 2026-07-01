@@ -6,6 +6,7 @@ create extension if not exists "pgcrypto";
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
+  username text,
   display_name text,
   role text not null default 'user' check (role in ('user', 'moderator', 'admin')),
   created_at timestamptz not null default now()
@@ -87,9 +88,14 @@ create table if not exists public.venue_requests (
 -- Migrering for databaser som allerede kjører v0.2/v0.2.1.
 alter table public.facility_reports add column if not exists status text;
 alter table public.reviews add column if not exists status text;
+alter table public.profiles add column if not exists username text;
 alter table public.venue_requests add column if not exists venue_id uuid references public.venues(id) on delete set null;
 alter table public.venue_requests add column if not exists processed_by uuid references auth.users(id) on delete set null;
 alter table public.venue_requests add column if not exists processed_at timestamptz;
+
+update public.profiles
+set username = lower(regexp_replace(coalesce(username, display_name, 'bruker'), '[^a-z0-9._-]+', '-', 'g')) || '-' || left(id::text, 8)
+where username is null;
 
 update public.reviews set status = 'approved' where approved = true and coalesce(status, '') <> 'approved';
 update public.reviews set status = 'pending' where status is null;
@@ -117,6 +123,7 @@ create index if not exists venues_status_name_idx on public.venues(status, name)
 create index if not exists reviews_venue_status_created_idx on public.reviews(venue_id, status, created_at desc);
 create index if not exists facility_reports_venue_status_created_idx on public.facility_reports(venue_id, status, created_at desc);
 create index if not exists venue_requests_status_created_idx on public.venue_requests(status, created_at desc);
+create unique index if not exists profiles_username_unique_idx on public.profiles(lower(username)) where username is not null;
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -125,8 +132,12 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, display_name)
-  values (new.id, coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1)))
+  insert into public.profiles (id, username, display_name)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
+    coalesce(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'username', split_part(new.email, '@', 1))
+  )
   on conflict (id) do nothing;
   return new;
 end;
@@ -152,7 +163,7 @@ create view public.approved_reviews_public as
 select
   r.id,
   r.venue_id,
-  coalesce(p.display_name, 'Innlogget bruker') as user_name,
+  coalesce(p.display_name, p.username, 'Innlogget bruker') as user_name,
   r.tribunesliter_minutes,
   r.comfort_score,
   r.view_score,

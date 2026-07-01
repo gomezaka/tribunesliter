@@ -6,6 +6,8 @@ const LOCAL_REVIEW_KEY = 'tribunesliter.localReviews.v2';
 const LOCAL_VENUE_KEY = 'tribunesliter.localVenueRequests.v2';
 const LOCAL_FACILITY_KEY = 'tribunesliter.localFacilityReports.v2';
 const LOCAL_HIDDEN_REVIEW_KEY = 'tribunesliter.hiddenReviews.v2';
+const USERNAME_EMAIL_DOMAIN = 'tribunesliter.local';
+const USERNAME_PATTERN = /^[a-z0-9._-]{3,24}$/;
 
 function readLocal(key, fallback = []) {
   try {
@@ -50,20 +52,62 @@ function hasModeratorRole(profile) {
   return profile?.role === 'moderator' || profile?.role === 'admin';
 }
 
+function normalizeUsername(username) {
+  return String(username || '').trim().toLowerCase();
+}
+
+function authEmailForUsername(username) {
+  const normalized = normalizeUsername(username);
+  if (normalized.includes('@')) return normalized;
+  if (!USERNAME_PATTERN.test(normalized)) {
+    throw new Error('Brukernavn må være 3-24 tegn og kan bare bruke bokstaver, tall, punktum, bindestrek og understrek.');
+  }
+  return `${normalized}@${USERNAME_EMAIL_DOMAIN}`;
+}
+
+function displayNameForUsername(username) {
+  const normalized = normalizeUsername(username);
+  return normalized.includes('@') ? normalized.split('@')[0] : normalized;
+}
+
+function usernameForMetadata(username) {
+  const normalized = normalizeUsername(username);
+  return normalized.includes('@') ? normalized.split('@')[0] : normalized;
+}
+
+function authErrorMessage(error) {
+  const message = String(error?.message || '');
+  if (/invalid login credentials/i.test(message)) return 'Feil brukernavn eller passord.';
+  if (/user already registered|already registered|already exists/i.test(message)) return 'Brukernavnet er allerede i bruk.';
+  if (/password/i.test(message)) return 'Passordet må være minst 6 tegn.';
+  return error?.message || 'Innloggingen feilet.';
+}
+
 async function fetchProfileForUser(userId) {
   if (!hasSupabaseConfig || !userId) return null;
+
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, display_name, role, created_at')
+    .select('id, username, display_name, role, created_at')
     .eq('id', userId)
     .maybeSingle();
+
+  if (error && (error.code === '42703' || /username/i.test(error.message || ''))) {
+    const fallback = await supabase
+      .from('profiles')
+      .select('id, display_name, role, created_at')
+      .eq('id', userId)
+      .maybeSingle();
+    if (fallback.error) throw fallback.error;
+    return fallback.data ? { ...fallback.data, username: fallback.data.display_name } : null;
+  }
 
   if (error) throw error;
   return data;
 }
 
 export async function getCurrentProfile() {
-  if (!hasSupabaseConfig) return { id: 'demo-user', display_name: 'Demo-admin', role: 'admin' };
+  if (!hasSupabaseConfig) return { id: 'demo-user', username: 'demo-admin', display_name: 'Demo-admin', role: 'admin' };
   const { data, error } = await supabase.auth.getUser();
   if (error) throw error;
   return fetchProfileForUser(data.user?.id);
@@ -72,7 +116,7 @@ export async function getCurrentProfile() {
 export async function getSession() {
   if (!hasSupabaseConfig) {
     const user = getDemoUser();
-    return { session: null, user, profile: user ? { id: 'demo-user', display_name: 'Demo-admin', role: 'admin' } : null, mode: 'demo' };
+    return { session: null, user, profile: user ? { id: 'demo-user', username: user.user_metadata?.username || 'demo-admin', display_name: user.user_metadata?.display_name || 'Demo-admin', role: 'admin' } : null, mode: 'demo' };
   }
 
   const { data, error } = await supabase.auth.getSession();
@@ -92,20 +136,60 @@ export async function listenToAuth(callback) {
   return () => data.subscription.unsubscribe();
 }
 
-export async function signInWithEmail(email) {
+export async function signInWithUsernamePassword(username, password) {
   if (!hasSupabaseConfig) {
-    const demoUser = { id: 'demo-user', email, user_metadata: { display_name: 'Demo-bruker' } };
+    const email = authEmailForUsername(username);
+    const displayName = displayNameForUsername(username) || 'demo-bruker';
+    const demoUser = { id: 'demo-user', email, user_metadata: { display_name: displayName, username: displayName } };
     localStorage.setItem('tribunesliter.demoUser', JSON.stringify(demoUser));
-    return { demo: true, user: demoUser, profile: { id: 'demo-user', display_name: 'Demo-admin', role: 'admin' } };
+    return { demo: true, user: demoUser, profile: { id: 'demo-user', username: displayName, display_name: displayName, role: 'admin' } };
   }
 
-  const redirectTo = import.meta.env.VITE_APP_URL || window.location.origin;
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: redirectTo },
-  });
-  if (error) throw error;
-  return { demo: false };
+  try {
+    const email = authEmailForUsername(username);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    const profile = data.user ? await fetchProfileForUser(data.user.id) : null;
+    return { demo: false, user: data.user, profile };
+  } catch (error) {
+    throw new Error(authErrorMessage(error));
+  }
+}
+
+export async function signUpWithUsernamePassword(username, password) {
+  const displayName = displayNameForUsername(username);
+  const normalizedUsername = usernameForMetadata(username);
+
+  if (!hasSupabaseConfig) {
+    const email = authEmailForUsername(username);
+    const demoUser = { id: 'demo-user', email, user_metadata: { display_name: displayName, username: normalizedUsername } };
+    localStorage.setItem('tribunesliter.demoUser', JSON.stringify(demoUser));
+    return { demo: true, user: demoUser, profile: { id: 'demo-user', username: normalizedUsername, display_name: displayName, role: 'admin' } };
+  }
+
+  try {
+    const email = authEmailForUsername(username);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          username: normalizedUsername,
+          display_name: displayName,
+        },
+      },
+    });
+    if (error) throw error;
+    const profile = data.user
+      ? (await fetchProfileForUser(data.user.id)) || { id: data.user.id, username: normalizedUsername, display_name: displayName, role: 'user' }
+      : null;
+    return { demo: false, user: data.user, profile, needsConfirmation: Boolean(data.user && !data.session) };
+  } catch (error) {
+    throw new Error(authErrorMessage(error));
+  }
 }
 
 export async function signOut() {
