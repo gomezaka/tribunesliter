@@ -174,6 +174,7 @@ function canModerate(profile, mode) {
 
 const quickTags = ['🪑 Ta med pute', '🧥 Kle deg varmt', '🧇 Kiosk verdt køen', '🥶 Kaldere enn forventet', '👀 God sikt', '🅿️ Lett parkering'];
 const SAVED_VENUES_KEY = 'tribunesliter.savedVenues.v1';
+const RECENT_VENUES_KEY = 'tribunesliter.recentVenues.v1';
 const INSTALL_HINT_DISMISSED_KEY = 'tribunesliter.installHint.dismissed.v1';
 const APP_REQUEST_TIMEOUT_MS = 12000;
 
@@ -215,6 +216,14 @@ export default function App() {
     if (typeof window === 'undefined') return [];
     try {
       return JSON.parse(window.localStorage.getItem(SAVED_VENUES_KEY) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [recentVenueIds, setRecentVenueIds] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      return JSON.parse(window.localStorage.getItem(RECENT_VENUES_KEY) || '[]');
     } catch {
       return [];
     }
@@ -288,6 +297,14 @@ export default function App() {
   }, [savedVenueIds]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(RECENT_VENUES_KEY, JSON.stringify(recentVenueIds));
+    } catch {
+      // Recent venues are only a local convenience.
+    }
+  }, [recentVenueIds]);
+
+  useEffect(() => {
     function handleBeforeInstallPrompt(event) {
       event.preventDefault();
       setInstallPrompt(event);
@@ -304,6 +321,11 @@ export default function App() {
   const savedVenues = useMemo(
     () => venues.filter((venue) => savedVenueIds.includes(venue.id)),
     [venues, savedVenueIds]
+  );
+
+  const recentVenues = useMemo(
+    () => recentVenueIds.map((id) => venues.find((venue) => venue.id === id)).filter(Boolean).slice(0, 4),
+    [venues, recentVenueIds]
   );
 
   const municipalities = useMemo(
@@ -352,6 +374,9 @@ export default function App() {
 
   function go(nextView, venueId) {
     if (venueId) setSelectedVenueId(venueId);
+    if (nextView === 'venue' && venueId) {
+      setRecentVenueIds((current) => [venueId, ...current.filter((id) => id !== venueId)].slice(0, 6));
+    }
     setNotice('');
     setView(nextView);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -545,6 +570,17 @@ export default function App() {
           <>
             {view === 'home' && (
               <HomeView
+                venues={venues}
+                recentVenues={recentVenues}
+                user={user}
+                profile={profile}
+                onSearch={() => go('search')}
+                onVenue={(id) => go('venue', id)}
+                onNewVenue={() => go('newVenue')}
+              />
+            )}
+            {view === 'search' && (
+              <SearchView
                 venues={filteredVenues}
                 allVenueCount={venues.length}
                 query={query}
@@ -577,7 +613,7 @@ export default function App() {
                 venues={savedVenues}
                 savedCount={savedVenueIds.length}
                 onVenue={(id) => go('venue', id)}
-                onExplore={() => go('explore')}
+                onExplore={() => go('search')}
               />
             )}
             {view === 'venue' && selectedVenue && (
@@ -706,7 +742,122 @@ function LoadingView() {
   );
 }
 
-function HomeView({
+function HomeView({ venues, recentVenues, user, profile, onSearch, onVenue, onNewVenue }) {
+  const displayName = profile?.display_name || user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'tribunesliter';
+  const firstName = displayName.split(/\s+/)[0] || 'tribunesliter';
+  const topVenues = [...venues].sort((a, b) => scoreFromMinutes(b.tribunesliter_minutes) - scoreFromMinutes(a.tribunesliter_minutes)).slice(0, 5);
+  const reportedVenues = [...venues]
+    .filter((venue) => Number(venue.review_count || 0) > 0)
+    .sort((a, b) => Number(b.review_count || 0) - Number(a.review_count || 0))
+    .slice(0, 3);
+  const recentCards = recentVenues.length ? recentVenues : topVenues.slice(0, 4);
+  const totalReports = venues.reduce((sum, venue) => sum + Number(venue.review_count || 0), 0);
+
+  return (
+    <section className="screen home-dashboard-screen">
+      <div className="home-greeting">
+        <span className="subtle-label">Tribunesliter beta</span>
+        <h1>Hei, {firstName}</h1>
+        <p>Finn hallen før kamp, sjekk putefaren og bidra med rumpedata etterpå.</p>
+        <button className="searchbox searchbox--button" type="button" onClick={onSearch}>
+          <Icon name="search" />
+          <span>Søk hall, bane eller kommune</span>
+        </button>
+      </div>
+
+      <div className="home-stat-strip">
+        <InfoCell label="Anlegg" value={venues.length} />
+        <InfoCell label="Rapporter" value={totalReports} />
+        <InfoCell label="Topp score" value={topVenues[0] ? scoreFromMinutes(topVenues[0].tribunesliter_minutes) : 0} />
+      </div>
+
+      <section className="home-section">
+        <SectionHeader title={recentVenues.length ? 'Sist besøkt' : 'Kom i gang'} action="Søk" onAction={onSearch} />
+        {recentCards.length ? (
+          <div className="recent-rail">
+            {recentCards.map((venue) => <RecentVenueCard key={venue.id} venue={venue} onClick={() => onVenue(venue.id)} />)}
+          </div>
+        ) : (
+          <EmptyState title="Ingen haller ennå" text="Når Supabase har anlegg, dukker de opp her." action="Foreslå anlegg" onAction={onNewVenue} />
+        )}
+      </section>
+
+      <section className="home-section">
+        <SectionHeader title="Ferske rumpe-rapporter" action="Søk" onAction={onSearch} />
+        {reportedVenues.length ? (
+          <div className="report-feed">
+            {reportedVenues.map((venue) => <ReportTeaser key={venue.id} venue={venue} onClick={() => onVenue(venue.id)} />)}
+          </div>
+        ) : (
+          <EmptyState title="Ingen rumpe-rapporter enda" text="Bli første som tester en tribune og setter standarden." action="Finn hall" onAction={onSearch} />
+        )}
+      </section>
+
+      <section className="home-section">
+        <SectionHeader title="Snillest mot rumpa" action="Alle" onAction={onSearch} />
+        <div className="toplist app-card">
+          {topVenues.length ? topVenues.map((venue, index) => (
+            <TopVenueRow key={venue.id} venue={venue} rank={index + 1} onClick={() => onVenue(venue.id)} />
+          )) : (
+            <p className="muted">Topplisten våkner når hallene er hentet.</p>
+          )}
+        </div>
+      </section>
+
+      <button className="floating-new-venue" type="button" onClick={onNewVenue}>
+        + Foreslå nytt anlegg
+      </button>
+    </section>
+  );
+}
+
+function RecentVenueCard({ venue, onClick }) {
+  const score = scoreFromMinutes(venue.tribunesliter_minutes);
+  return (
+    <button className="recent-card" type="button" onClick={onClick}>
+      <div className={cx('score-badge', `score-badge--${venueTone(venue)}`)}>
+        <b>{score || '–'}</b>
+        <span>Score</span>
+      </div>
+      <span className={cx('tag', venue.is_outdoor ? 'tag--blue' : 'tag--green')}>{venue.is_outdoor ? 'Ute' : 'Inne'}</span>
+      <strong>{venue.name}</strong>
+      <small>{venue.municipality} · {primarySport(venue)}</small>
+    </button>
+  );
+}
+
+function ReportTeaser({ venue, onClick }) {
+  return (
+    <button className="report-teaser app-card" type="button" onClick={onClick}>
+      <div className="review-avatar">{venue.name[0]}</div>
+      <div>
+        <strong>{venue.name}</strong>
+        <span>{venue.review_count} rapporter · {deriveTribunesliterLabel(venue.tribunesliter_minutes)}</span>
+      </div>
+      <em>★ {scoreFromMinutes(venue.tribunesliter_minutes) || '–'}</em>
+    </button>
+  );
+}
+
+function TopVenueRow({ venue, rank, onClick }) {
+  const score = scoreFromMinutes(venue.tribunesliter_minutes);
+  return (
+    <button className="toplist-row" type="button" onClick={onClick}>
+      <span className="toplist-rank">{rank}</span>
+      <div className={cx('score-badge', `score-badge--${venueTone(venue)}`)}>
+        <b>{score || '–'}</b>
+        <span>Score</span>
+      </div>
+      <div>
+        <strong>{venue.name}</strong>
+        <small>{deriveTribunesliterLabel(venue.tribunesliter_minutes)}</small>
+      </div>
+      <i aria-hidden="true">›</i>
+    </button>
+  );
+}
+
+function SearchView({
   venues,
   allVenueCount,
   query,
@@ -1642,8 +1793,8 @@ function EmptyState({ title, text, action, onAction }) {
 function BottomNav({ active, onNav, selectedVenue, savedCount }) {
   return (
     <nav className="bottom-nav" aria-label="Hovedmeny">
-      <button className={cx(active === 'home' && 'active')} type="button" onClick={() => onNav('home')}><Icon name="home" /><span>Haller</span></button>
-      <button className={cx(active === 'explore' && 'active')} type="button" onClick={() => onNav('explore')}><Icon name="map" /><span>Kart</span></button>
+      <button className={cx(active === 'home' && 'active')} type="button" onClick={() => onNav('home')}><Icon name="home" /><span>Hjem</span></button>
+      <button className={cx(active === 'search' && 'active')} type="button" onClick={() => onNav('search')}><Icon name="search" /><span>Søk</span></button>
       <button className="nav-fab" type="button" onClick={() => onNav('rate', selectedVenue?.id)} aria-label="Bidra"><span><Icon name="plus" /></span></button>
       <button className={cx(active === 'saved' && 'active')} type="button" onClick={() => onNav('saved')}><Icon name="heart" /><span>Lagret{savedCount ? ` ${savedCount}` : ''}</span></button>
       <button className={cx(active === 'profile' && 'active')} type="button" onClick={() => onNav('profile')}><Icon name="user" /><span>Profil</span></button>
