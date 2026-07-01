@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tribunesliter-app-shell-v2.4';
+const CACHE_NAME = 'tribunesliter-app-shell-v2.8';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {

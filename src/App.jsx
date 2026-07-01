@@ -173,6 +173,8 @@ function canModerate(profile, mode) {
 }
 
 const quickTags = ['🪑 Ta med pute', '🧥 Kle deg varmt', '🧇 Kiosk verdt køen', '🥶 Kaldere enn forventet', '👀 God sikt', '🅿️ Lett parkering'];
+const SAVED_VENUES_KEY = 'tribunesliter.savedVenues.v1';
+const INSTALL_HINT_DISMISSED_KEY = 'tribunesliter.installHint.dismissed.v1';
 
 export default function App() {
   const [view, setView] = useState('home');
@@ -194,6 +196,19 @@ export default function App() {
   const [venueRequest, setVenueRequest] = useState(emptyVenueRequest);
   const [moderation, setModeration] = useState({ reviews: [], approvedReviews: [], facilityReports: [], venueRequests: [] });
   const [adminBusy, setAdminBusy] = useState('');
+  const [savedVenueIds, setSavedVenueIds] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      return JSON.parse(window.localStorage.getItem(SAVED_VENUES_KEY) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installHintDismissed, setInstallHintDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(INSTALL_HINT_DISMISSED_KEY) === '1';
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -229,9 +244,31 @@ export default function App() {
     return () => unlisten();
   }, []);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SAVED_VENUES_KEY, JSON.stringify(savedVenueIds));
+    } catch {
+      // localStorage may be unavailable in private browsing. Saved venues are optional.
+    }
+  }, [savedVenueIds]);
+
+  useEffect(() => {
+    function handleBeforeInstallPrompt(event) {
+      event.preventDefault();
+      setInstallPrompt(event);
+    }
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
   const selectedVenue = useMemo(
     () => venues.find((venue) => venue.id === selectedVenueId) || venues[0],
     [venues, selectedVenueId]
+  );
+
+  const savedVenues = useMemo(
+    () => venues.filter((venue) => savedVenueIds.includes(venue.id)),
+    [venues, savedVenueIds]
   );
 
   const municipalities = useMemo(
@@ -283,6 +320,49 @@ export default function App() {
     setNotice('');
     setView(nextView);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function toggleSavedVenue(venueId) {
+    if (!venueId) return;
+    setSavedVenueIds((current) => {
+      const exists = current.includes(venueId);
+      const next = exists ? current.filter((id) => id !== venueId) : [...current, venueId];
+      const venueName = venues.find((venue) => venue.id === venueId)?.name || 'Anlegget';
+      setNotice(exists ? `${venueName} er fjernet fra lagret.` : `${venueName} er lagret på denne enheten.`);
+      return next;
+    });
+  }
+
+  async function shareVenue(venue) {
+    if (!venue) return;
+    const url = window.location.href.split('#')[0];
+    const text = `${venue.name} på Tribunesliter · ${deriveTribunesliterLabel(venue.tribunesliter_minutes || 0)}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Tribunesliter: ${venue.name}`, text, url });
+        return;
+      }
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      setNotice('Lenke kopiert.');
+    } catch {
+      setNotice('Deling ble avbrutt.');
+    }
+  }
+
+  async function installApp() {
+    if (installPrompt) {
+      installPrompt.prompt();
+      await installPrompt.userChoice.catch(() => null);
+      setInstallPrompt(null);
+      setNotice('Installasjonsvinduet er åpnet.');
+      return;
+    }
+    setNotice('På iPhone: åpne i Safari → Del → Legg til på Hjem-skjerm. På Android: menyen i nettleseren → Installer app / Legg til på startskjerm.');
+  }
+
+  function dismissInstallHint() {
+    setInstallHintDismissed(true);
+    window.localStorage.setItem(INSTALL_HINT_DISMISSED_KEY, '1');
   }
 
   async function refreshVenues() {
@@ -449,6 +529,22 @@ export default function App() {
                 onNewVenue={() => go('newVenue')}
               />
             )}
+            {view === 'explore' && (
+              <ExploreView
+                venues={venues}
+                municipalities={municipalities}
+                onVenue={(id) => go('venue', id)}
+                onNewVenue={() => go('newVenue')}
+              />
+            )}
+            {view === 'saved' && (
+              <SavedView
+                venues={savedVenues}
+                savedCount={savedVenueIds.length}
+                onVenue={(id) => go('venue', id)}
+                onExplore={() => go('explore')}
+              />
+            )}
             {view === 'venue' && selectedVenue && (
               <VenueView
                 venue={selectedVenue}
@@ -462,6 +558,9 @@ export default function App() {
                   setFacilityForm(makeFacilityReportFromVenue(selectedVenue));
                   go('facility', selectedVenue.id);
                 }}
+                isSaved={savedVenueIds.includes(selectedVenue.id)}
+                onToggleSaved={() => toggleSavedVenue(selectedVenue.id)}
+                onShare={() => shareVenue(selectedVenue)}
               />
             )}
             {view === 'rate' && (
@@ -493,6 +592,10 @@ export default function App() {
                 onLogin={handleLogin}
                 onLogout={handleLogout}
                 onAdmin={loadModeration}
+                onInstall={installApp}
+                canInstall={Boolean(installPrompt)}
+                installHintDismissed={installHintDismissed}
+                onDismissInstall={dismissInstallHint}
               />
             )}
             {view === 'newVenue' && (
@@ -521,7 +624,7 @@ export default function App() {
           </>
         )}
 
-        <BottomNav active={view} onNav={go} selectedVenue={selectedVenue} />
+        <BottomNav active={view} onNav={go} selectedVenue={selectedVenue} savedCount={savedVenueIds.length} />
       </section>
     </main>
   );
@@ -537,10 +640,16 @@ function Header({ user, profile, mode, onHome, onProfile }) {
   const label = mode === 'demo' ? 'DEMO' : user ? (profile?.role || 'BRUKER') : 'LOGG INN';
   return (
     <header className="topbar">
-      <button className="region-pill" type="button" onClick={onHome} aria-label="Til forsiden">
-        <span>Tribunesliter</span>
-        <strong>Viken</strong>
-      </button>
+      <div className="brand-stack">
+        <button className="brand-button" type="button" onClick={onHome} aria-label="Til forsiden">
+          <span className="brand-mark" aria-hidden="true">🍑</span>
+          <span className="wordmark">Tribunesliter</span>
+        </button>
+        <button className="region-pill" type="button" onClick={onHome} aria-label="Velg region">
+          <span>Din region</span>
+          <strong>Viken</strong>
+        </button>
+      </div>
       <button className="avatar-pill" type="button" onClick={onProfile} title={label}>
         {initials}
       </button>
@@ -580,13 +689,7 @@ function HomeView({
 }) {
   return (
     <section className="screen home-screen">
-      <div className="home-title-block">
-        <span className="subtle-label">Din tribuneguide</span>
-        <h1>Finn ut om rumpa overlever kampen.</h1>
-        <p>Fasiliteter, putealarm og ekte erfaringer fra folk som faktisk har sittet der.</p>
-      </div>
-
-      <label className="searchbox">
+      <label className="searchbox searchbox--home">
         <Icon name="search" />
         <input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Søk hall, bane eller kommune…" />
       </label>
@@ -656,7 +759,95 @@ function HomeView({
   );
 }
 
-function VenueCard({ venue, onClick }) {
+
+function ExploreView({ venues, municipalities, onVenue, onNewVenue }) {
+  const grouped = municipalities.map((municipality) => ({
+    municipality,
+    venues: venues.filter((venue) => venue.municipality === municipality),
+  })).filter((group) => group.venues.length);
+  const outdoorCount = venues.filter((venue) => venue.is_outdoor).length;
+  const ratedCount = venues.filter((venue) => Number(venue.review_count || 0) > 0).length;
+
+  return (
+    <section className="screen explore-screen">
+      <div className="home-title-block">
+        <span className="subtle-label">Utforsk</span>
+        <h1>Kart, kommuner og anlegg.</h1>
+        <p>Rask oversikt for beta-testing. Kartlenker åpnes i Google Maps når adresse finnes.</p>
+      </div>
+
+      <div className="stat-grid app-card">
+        <InfoCell label="Anlegg" value={venues.length} />
+        <InfoCell label="Kommuner" value={municipalities.length} />
+        <InfoCell label="Utendørs" value={outdoorCount} />
+        <InfoCell label="Med rapporter" value={ratedCount} />
+      </div>
+
+      {grouped.length === 0 ? (
+        <EmptyState title="Ingen anlegg ennå" text="Legg inn første hall, så får utforsk-visningen innhold." action="Foreslå anlegg" onAction={onNewVenue} />
+      ) : (
+        <div className="municipality-list">
+          {grouped.map((group) => (
+            <section className="municipality-card app-card" key={group.municipality}>
+              <div className="municipality-card__head">
+                <div>
+                  <span className="eyebrow">Kommune</span>
+                  <h2>{group.municipality}</h2>
+                </div>
+                <strong>{group.venues.length}</strong>
+              </div>
+              <div className="map-venue-list">
+                {group.venues.map((venue) => {
+                  const mapQuery = [venue.name, venue.address, venue.municipality].filter(Boolean).join(', ');
+                  return (
+                    <article className="map-venue-row" key={venue.id}>
+                      <button type="button" onClick={() => onVenue(venue.id)}>
+                        <strong>{venue.name}</strong>
+                        <span>{venue.venue_type} · {primarySport(venue)}</span>
+                      </button>
+                      {mapQuery && (
+                        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`} target="_blank" rel="noreferrer" aria-label={`Åpne kart for ${venue.name}`}>
+                          <Icon name="map" />
+                        </a>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SavedView({ venues, savedCount, onVenue, onExplore }) {
+  return (
+    <section className="screen saved-screen">
+      <div className="home-title-block">
+        <span className="subtle-label">Lagret</span>
+        <h1>Dine faste tribuner.</h1>
+        <p>Lagret lokalt på denne enheten, så du raskt finner igjen haller før kamp og cup.</p>
+      </div>
+
+      {venues.length === 0 ? (
+        <EmptyState
+          title="Ingen lagrede haller"
+          text={savedCount ? 'Noen lagrede anlegg finnes ikke lenger i datasettet.' : 'Åpne en hall og trykk hjertet for å lagre den her.'}
+          action="Utforsk anlegg"
+          onAction={onExplore}
+        />
+      ) : (
+        <div className="venue-list">
+          {venues.map((venue) => <VenueCard venue={venue} key={venue.id} isSaved onClick={() => onVenue(venue.id)} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function VenueCard({ venue, onClick, isSaved = false }) {
   const score = scoreFromMinutes(venue.tribunesliter_minutes);
   const tone = venueTone(venue);
   return (
@@ -672,6 +863,7 @@ function VenueCard({ venue, onClick }) {
           <small className={cx('tag', venue.is_outdoor ? 'tag--blue' : 'tag--green')}>{venue.is_outdoor ? 'Utendørs' : 'Innendørs'}</small>
           <small className="tag tag--neutral">{primarySport(venue)}</small>
           <small className="tag tag--amber">★ {venue.review_count || 0}</small>
+          {isSaved && <small className="tag tag--green">Lagret</small>}
         </div>
         <div className="venue-card__foot">
           {statusLines(venue).map((line) => <em key={line}>{line}</em>)}
@@ -681,7 +873,7 @@ function VenueCard({ venue, onClick }) {
   );
 }
 
-function VenueView({ venue, reviews, onBack, onRate, onReportFacility }) {
+function VenueView({ venue, reviews, onBack, onRate, onReportFacility, isSaved, onToggleSaved, onShare }) {
   const facilities = venue.facilities || {};
   const mapQuery = [venue.name, venue.address, venue.municipality].filter(Boolean).join(', ');
   const score = scoreFromMinutes(venue.tribunesliter_minutes);
@@ -707,8 +899,8 @@ function VenueView({ venue, reviews, onBack, onRate, onReportFacility }) {
       <div className="detail-topbar">
         <button className="icon-button" type="button" onClick={onBack} aria-label="Tilbake"><Icon name="back" /></button>
         <div className="detail-actions">
-          <button className="icon-button" type="button" aria-label="Del"><Icon name="share" /></button>
-          <button className="icon-button" type="button" aria-label="Lagre"><Icon name="heart" /></button>
+          <button className="icon-button" type="button" aria-label="Del" onClick={onShare}><Icon name="share" /></button>
+          <button className={cx('icon-button', isSaved && 'icon-button--active')} type="button" aria-label={isSaved ? 'Fjern fra lagret' : 'Lagre'} onClick={onToggleSaved}><Icon name="heart" /></button>
         </div>
       </div>
 
@@ -1138,7 +1330,7 @@ function ThanksView({ venue, onHome, onVenue }) {
   );
 }
 
-function ProfileView({ user, profile, mode, canModerate, onLogin, onLogout, onAdmin }) {
+function ProfileView({ user, profile, mode, canModerate, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissInstall }) {
   const [email, setEmail] = useState('');
 
   return (
@@ -1158,6 +1350,20 @@ function ProfileView({ user, profile, mode, canModerate, onLogin, onLogout, onAd
           </div>
         )}
       </div>
+
+      {!installHintDismissed && (
+        <div className="install-card app-card">
+          <div>
+            <span className="eyebrow">Mobilapp</span>
+            <h2>Legg Tribunesliter på hjemskjermen</h2>
+            <p>Android viser ofte egen installer-knapp. På iPhone bruker du Safari → Del → Legg til på Hjem-skjerm.</p>
+          </div>
+          <div className="install-actions">
+            <button className="primary-action" type="button" onClick={onInstall}>{canInstall ? 'Installer app' : 'Vis installasjonstips'}</button>
+            <button className="secondary-action" type="button" onClick={onDismissInstall}>Skjul</button>
+          </div>
+        </div>
+      )}
 
       {user ? (
         <div className="form-card app-card">
@@ -1395,13 +1601,13 @@ function EmptyState({ title, text, action, onAction }) {
   );
 }
 
-function BottomNav({ active, onNav, selectedVenue }) {
+function BottomNav({ active, onNav, selectedVenue, savedCount }) {
   return (
     <nav className="bottom-nav" aria-label="Hovedmeny">
       <button className={cx(active === 'home' && 'active')} type="button" onClick={() => onNav('home')}><Icon name="home" /><span>Haller</span></button>
-      <button type="button" onClick={() => onNav(selectedVenue ? 'venue' : 'home', selectedVenue?.id)}><Icon name="map" /><span>Kart</span></button>
+      <button className={cx(active === 'explore' && 'active')} type="button" onClick={() => onNav('explore')}><Icon name="map" /><span>Kart</span></button>
       <button className="nav-fab" type="button" onClick={() => onNav('rate', selectedVenue?.id)} aria-label="Bidra"><span><Icon name="plus" /></span></button>
-      <button type="button" onClick={() => onNav(selectedVenue ? 'venue' : 'home', selectedVenue?.id)}><Icon name="heart" /><span>Lagret</span></button>
+      <button className={cx(active === 'saved' && 'active')} type="button" onClick={() => onNav('saved')}><Icon name="heart" /><span>Lagret{savedCount ? ` ${savedCount}` : ''}</span></button>
       <button className={cx(active === 'profile' && 'active')} type="button" onClick={() => onNav('profile')}><Icon name="user" /><span>Profil</span></button>
     </nav>
   );

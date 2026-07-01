@@ -1,17 +1,12 @@
-# Tribunesliter v2.4
+# Tribunesliter v2.10
 
-Designoppdatering basert på handoffen **Tribunesliter Sporty**. Denne versjonen er en ren frontend-/PWA-oppdatering og krever ingen ny SQL-kjøring hvis du allerede kjører v2.3.
+Liten designoppdatering på forsiden.
 
-Nytt i v2.4:
+Nytt i v2.10:
 
-- Nytt mobil-først designsystem med Archivo/Manrope, grønne CTA-er, amber score/rumpe-elementer og renere kort.
-- Appaktig bunnmeny med fem punkter og midtstilt FAB for bidrag/vurdering.
-- Redesignet forside med stor appoverskrift, søk, filterchips, sortering og nye hallkort.
-- Hallprofil med score-ring, putealarm, delscorekort, bedre fasilitetsliste, pakkeliste og sticky handlinger.
-- Ny vurderingsflyt med Rumpe-o-meter, terningkast-knapper, raske kommentar-tags og bedre mobilskjema.
-- Ny Rett info-flyt med tydelig skille mellom offisiell info og brukerforslag.
-- Mer skannbart moderatorpanel med stat-piller og modereringskort.
-- Nye empty/loading/success-states med samme visuelle språk.
+- Forsidetoppen bruker nå sporty logo-bar med grønt 🍑-merke og tydelig wordmark.
+- Regionvelgeren ligger under logoen med teksten `Din region` og `Viken ⌄`.
+- Den store forsidesetningen er fjernet, slik at søk og filter kommer raskere frem slik designreferansen beskriver.
 
 # Tribunesliter — tribune- og hallapp
 
@@ -26,7 +21,15 @@ Målet er at folk skal kunne:
 - foreslå nye haller/anlegg
 - moderere innsendinger før de vises offentlig
 
-## Nytt i v0.2.3
+## Nytt i v0.2.6
+
+- Lagrede haller/favoritter i egen bunnmenyvisning.
+- Utforsk/kartvisning per kommune.
+- Deling av hallprofil via mobilens delingsark eller clipboard.
+- PWA-installasjonspanel på profilskjermen.
+- Deploy-filer for Netlify og Vercel.
+
+## Tidligere i v0.2.3
 
 - Ekte modereringsflyt i appen
 - Godkjenn/avvis ventende vurderinger
@@ -45,6 +48,9 @@ index.html
 package.json
 vite.config.js
 .env.example
+.gitignore
+netlify.toml
+vercel.json
 public/
   icon.svg
   manifest.webmanifest
@@ -59,6 +65,9 @@ src/
     supabase.js
 docs/
   supabase-schema.sql
+  deploy-checklist.md
+  beta-testplan.md
+  mobil-installasjon.md
 scripts/
   check-source.mjs
 ```
@@ -173,3 +182,38 @@ Denne versjonen gjør appen mer klar for ekte betatest:
 - vurderingsskjemaet inkluderer garderobe og dusj
 
 Etter oppdatering må `docs/supabase-schema.sql` kjøres på nytt i Supabase, fordi `venue_public_cards` nå returnerer `facility_reported_at`.
+
+
+## Østfold startdata
+
+Denne versjonen inneholder `docs/supabase-seed-ostfold-v1.sql`.
+
+Kjør filen i Supabase SQL Editor etter at hovedschemaet er kjørt. Den legger inn et første sett med godkjente haller/anlegg i Østfold uten å overskrive eksisterende rader. Fasilitetsdata legges ikke inn automatisk; de skal fylles inn av brukere via «Rett info» og modereres.
+
+## Fylkes-seeding
+
+Kjør fylkene ett om gangen. Filene registrerer kun rader i `public.venues`.
+
+Tilgjengelige fylkesfiler:
+
+- `docs/supabase-seed-ostfold-v1.sql`
+- `docs/supabase-seed-akershus-v1.sql`
+- `docs/supabase-seed-oslo-v1.sql`
+- `docs/supabase-seed-buskerud-v1.sql`
+
+
+## Buskerud startdata
+
+Denne versjonen inneholder `docs/supabase-seed-buskerud-v1.sql`.
+
+Filen registrerer et første sett med godkjente haller/anlegg i Buskerud uten å overskrive eksisterende rader. Den legger ikke inn fasilitetsdata, vurderinger eller brukerlogger; dette skal fylles inn av brukere via «Rett info» og vurderinger.
+
+Kontroll etter import:
+
+```sql
+select municipality, count(*)
+from public.venues
+where status = 'approved'
+group by municipality
+order by municipality;
+```
