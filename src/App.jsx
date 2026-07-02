@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  archiveVenue,
   approveVenueRequest,
   fetchPendingModeration,
   fetchReviews,
@@ -1053,8 +1054,13 @@ export default function App() {
       setAdminBusy(key);
       await action();
       await refreshModeration();
-      await refreshVenues();
-      if (selectedVenue?.id) setReviews(await fetchReviews(selectedVenue.id));
+      const updatedVenues = await refreshVenues();
+      if (selectedVenueId && updatedVenues.some((venue) => venue.id === selectedVenueId)) {
+        setReviews(await fetchReviews(selectedVenueId));
+      } else if (selectedVenueId) {
+        setSelectedVenueId(updatedVenues[0]?.id || null);
+        setReviews([]);
+      }
       setNotice(successMessage);
     } catch (error) {
       setNotice(errorMessage(error));
@@ -1195,6 +1201,7 @@ export default function App() {
             )}
             {view === 'admin' && (
               <AdminView
+                venues={venues}
                 moderation={moderation}
                 busy={adminBusy}
                 onBack={() => go('profile')}
@@ -1203,6 +1210,11 @@ export default function App() {
                 onRejectFacility={(id) => runAdminAction(`reject-facility-${id}`, () => rejectFacilityReport(id), 'Fasilitetsinfo er skjult.')}
                 onApproveVenue={(request) => runAdminAction(`approve-venue-${request.id}`, () => approveVenueRequest(request), 'Anlegget er godkjent og publisert.')}
                 onRejectVenue={(id) => runAdminAction(`reject-venue-${id}`, () => rejectVenueRequest(id), 'Anleggsforslaget er avvist.')}
+                onArchiveVenue={(venue) => {
+                  const confirmed = window.confirm(`Arkiver ${venue.name}? Anlegget fjernes fra offentlig liste, men historikk beholdes.`);
+                  if (!confirmed) return;
+                  runAdminAction(`archive-venue-${venue.id}`, () => archiveVenue(venue.id), 'Anlegget er fjernet fra offentlig liste.');
+                }}
               />
             )}
           </>
@@ -2209,6 +2221,7 @@ function NewVenueView({ form, setForm, onSubmit, onBack }) {
 }
 
 function AdminView({
+  venues = [],
   moderation,
   busy,
   onBack,
@@ -2217,9 +2230,22 @@ function AdminView({
   onRejectFacility,
   onApproveVenue,
   onRejectVenue,
+  onArchiveVenue,
 }) {
   const [venueDrafts, setVenueDrafts] = useState({});
+  const [venueSearch, setVenueSearch] = useState('');
   const pendingCount = moderation.venueRequests.length;
+  const visibleVenues = useMemo(() => {
+    const needle = venueSearch.trim().toLowerCase();
+    if (!needle) return venues;
+    return venues.filter((venue) => [
+      venue.name,
+      venue.municipality,
+      venue.address,
+      venue.venue_type,
+      ...(venue.sport_tags || []),
+    ].some((value) => String(value || '').toLowerCase().includes(needle)));
+  }, [venues, venueSearch]);
 
   useEffect(() => {
     const nextDrafts = {};
@@ -2249,8 +2275,26 @@ function AdminView({
       <div className="stat-row">
         <span className="stat-pill stat-pill--amber">Venter {pendingCount}</span>
         <span className="stat-pill stat-pill--green">Synlige vurderinger {moderation.approvedReviews.length}</span>
+        <span className="stat-pill stat-pill--blue">Anlegg {venues.length}</span>
         <span className="stat-pill stat-pill--red">Skjul ved behov</span>
       </div>
+
+      <section className="panel app-card">
+        <SectionHeader title={`Synlige anlegg · ${venues.length}`} />
+        <label className="admin-search">
+          Finn anlegg
+          <input value={venueSearch} onChange={(event) => setVenueSearch(event.target.value)} placeholder="Søk etter f.eks. Hotell City" />
+        </label>
+        {!visibleVenues.length ? (
+          <p className="muted">Ingen synlige anlegg matcher søket.</p>
+        ) : (
+          <div className="review-list">
+            {visibleVenues.map((venue) => (
+              <ModerationVenueCard key={venue.id} venue={venue} busy={busy} onArchive={() => onArchiveVenue(venue)} />
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="panel app-card">
         <SectionHeader title={`Synlig anleggsinfo · ${moderation.facilityReports?.length || 0}`} />
@@ -2304,6 +2348,26 @@ function AdminView({
         )}
       </section>
     </section>
+  );
+}
+
+function ModerationVenueCard({ venue, busy, onArchive }) {
+  return (
+    <article className="mod-card mod-card--red">
+      <div className="mod-card__top"><span className="tag tag--red">Synlig anlegg</span><small>{venue.municipality}</small></div>
+      <h3>{venue.name}</h3>
+      <p>{venue.address || venue.venue_type || 'Adresse ikke registrert.'}</p>
+      <div className="score-row score-row--wrap">
+        <span>{venue.venue_type}</span>
+        <span>{venue.is_outdoor ? 'Utendørs' : 'Innendørs'}</span>
+        <span>{venue.review_count || 0} vurderinger</span>
+      </div>
+      <div className="mini-actions">
+        <button className="danger-action" type="button" disabled={Boolean(busy)} onClick={onArchive}>
+          {busy === `archive-venue-${venue.id}` ? 'Arkiverer…' : 'Arkiver'}
+        </button>
+      </div>
+    </article>
   );
 }
 

@@ -933,7 +933,16 @@ input[type="range"] { accent-color: var(--amber); padding: 0; border: 0; box-sha
 .stat-pill { white-space: nowrap; border-radius: 999px; padding: 8px 10px; font: 900 12px/1 Manrope; }
 .stat-pill--amber { background: var(--amber-tint); color: var(--amber-text); }
 .stat-pill--green { background: var(--primary-tint); color: var(--primary-dark); }
+.stat-pill--blue { background: var(--blue-tint); color: var(--blue-text); }
 .stat-pill--red { background: var(--red-tint); color: var(--red-text); }
+.admin-search {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
 .mod-card {
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -945,6 +954,7 @@ input[type="range"] { accent-color: var(--amber); padding: 0; border: 0; box-sha
 .mod-card--amber { border-left: 4px solid var(--amber); }
 .mod-card--green { border-left: 4px solid var(--primary); }
 .mod-card--blue { border-left: 4px solid var(--blue); }
+.mod-card--red { border-left: 4px solid var(--red); }
 .mod-card__top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .mod-card__top small, .mod-card > small { color: var(--muted); font-weight: 800; }
 .mod-card h3 { margin: 0; font: 900 18px/1.1 Archivo; }
@@ -956,6 +966,7 @@ input[type="range"] { accent-color: var(--amber); padding: 0; border: 0; box-sha
 .mini-actions button { min-height: 42px; border: 0; border-radius: 13px; background: var(--primary); color: white; font-weight: 900; }
 .mini-actions button:last-child { background: var(--neutral-chip); color: var(--text); }
 .mod-card .mini-actions button:only-child { grid-column: 1 / -1; }
+.mini-actions button.danger-action { background: var(--red); color: #fff; }
 
 .bottom-nav {
   position: fixed;

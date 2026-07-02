@@ -6,6 +6,7 @@ const LOCAL_REVIEW_KEY = 'tribunesliter.localReviews.v2';
 const LOCAL_VENUE_KEY = 'tribunesliter.localVenueRequests.v2';
 const LOCAL_FACILITY_KEY = 'tribunesliter.localFacilityReports.v2';
 const LOCAL_HIDDEN_REVIEW_KEY = 'tribunesliter.hiddenReviews.v2';
+const LOCAL_ARCHIVED_VENUE_KEY = 'tribunesliter.archivedVenues.v1';
 const ANONYMOUS_DEVICE_ID_KEY = 'tribunesliter.anonymousDeviceId.v1';
 const USERNAME_EMAIL_DOMAIN = 'tribunesliter.local';
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,24}$/;
@@ -281,7 +282,8 @@ export async function fetchVenues() {
     const localReviews = readLocal(LOCAL_REVIEW_KEY, []);
     const localFacilityReports = readLocal(LOCAL_FACILITY_KEY, []);
     const hiddenIds = new Set(readLocal(LOCAL_HIDDEN_REVIEW_KEY, []));
-    return demoVenues.map((venue) => {
+    const archivedVenueIds = new Set(readLocal(LOCAL_ARCHIVED_VENUE_KEY, []));
+    return demoVenues.filter((venue) => !archivedVenueIds.has(venue.id)).map((venue) => {
       const allReviews = [...demoReviews, ...localReviews]
         .filter((review) => review.venue_id === venue.id)
         .filter((review) => review.status !== 'pending' && review.status !== 'rejected' && review.status !== 'hidden')
@@ -308,6 +310,26 @@ export async function fetchVenues() {
 
   if (error) throw error;
   return data.map(normalizeVenue);
+}
+
+export async function archiveVenue(venueId) {
+  if (!venueId) throw new Error('Mangler anlegg å arkivere.');
+
+  if (!hasSupabaseConfig) {
+    const archivedVenueIds = new Set(readLocal(LOCAL_ARCHIVED_VENUE_KEY, []));
+    archivedVenueIds.add(venueId);
+    writeLocal(LOCAL_ARCHIVED_VENUE_KEY, [...archivedVenueIds]);
+    return;
+  }
+
+  const profile = await getCurrentProfile();
+  if (!hasModeratorRole(profile)) throw new Error('Denne brukeren mangler moderator- eller adminrolle.');
+
+  const { error } = await supabase
+    .from('venues')
+    .update({ status: 'archived', updated_at: new Date().toISOString() })
+    .eq('id', venueId);
+  if (error) throw error;
 }
 
 export async function fetchVenue(venueId) {
