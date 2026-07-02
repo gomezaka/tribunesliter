@@ -428,7 +428,58 @@ const BADGE_DEFINITIONS = [
   { id: 'banesliter', icon: '🏟️', title: 'Banesliter', description: '25 sjekk-ins. Lokalidrettens uoffisielle sitteekspert.', metric: 'checkIns', target: 25 },
   { id: 'vaffelvarsler', icon: '🧇', title: 'Vaffelvarsler', description: '3 fasilitetsbidrag om kiosk, do eller parkering.', metric: 'facilityReports', target: 3 },
   { id: 'kartfikser', icon: '🗺️', title: 'Kartfikser', description: 'Foreslått et manglende anlegg.', metric: 'venueRequests', target: 1 },
+  { id: 'treplanketemmeren', icon: '🪵', title: 'Treplanketemmeren', description: '5 utendørsbaner vurdert. Du har overlevd mer trebenk enn kroppen anbefaler.', metric: 'outdoorReviews', target: 5 },
+  { id: 'hallstølen', icon: '🏐', title: 'Hallstølen', description: '5 innendørsanlegg vurdert. Ribbevegg, klappstol og betongtribune er kartlagt.', metric: 'indoorReviews', target: 5 },
+  { id: 'kioskprofeten', icon: '🌭', title: 'Kioskprofeten', description: '5 kioskvurderinger. Du lukter vaffelplate på 300 meters avstand.', metric: 'kioskReports', target: 5 },
+  { id: 'dopatruljen', icon: '🚽', title: 'Dopatruljen', description: '5 toalettvurderinger. Ingen kampdag uten strategisk do-kartlegging.', metric: 'toiletReports', target: 5 },
+  { id: 'parkeringsorakelet', icon: '🅿️', title: 'Parkeringsorakelet', description: '5 parkeringsvurderinger. Bil, sykkel eller bare gi opp?', metric: 'parkingReports', target: 5 },
+  { id: 'førsteradstraumet', icon: '👀', title: 'Førsteradstraumet', description: '3 vurderinger med dårlig sikt. Du har sett mer rygg enn kamp.', metric: 'badViewReviews', target: 3 },
+  { id: 'betongrumpa', icon: '🪨', title: 'Betongrumpa', description: '10 dårlige sitteplassvurderinger. Smerteterskelen er ikke normal lenger.', metric: 'badSeatReviews', target: 10 },
+  { id: 'putemisjonæren', icon: '🛋️', title: 'Putemisjonæren', description: '10 sitteplassvurderinger. Ta med pute. Alltid.', metric: 'seatingReports', target: 10 },
+  { id: 'langturlegenden', icon: '🚗', title: 'Langturlegenden', description: '10 ulike anlegg vurdert. Mer tid i bil enn på selve kampen.', metric: 'uniqueVenues', target: 10 },
+  { id: 'lokalkjent', icon: '🧭', title: 'Lokalkjent', description: '10 anlegg i samme kommune/område. Du kan snart guide bortelaget.', metric: 'bestMunicipalityCount', target: 10 },
+  { id: 'bortebanehelten', icon: '🚌', title: 'Bortebanehelten', description: '15 ulike anlegg vurdert. Dugnadskaffe på tvers av kommuner.', metric: 'uniqueVenues', target: 15 },
+  { id: 'kveldskampkrigeren', icon: '🌙', title: 'Kveldskampkrigeren', description: 'Vurdering sendt etter kl. 20. Du fryser, men rapporterer fortsatt.', metric: 'lateReviews', target: 1 },
+  { id: 'regnponcho-ridderen', icon: '🌧️', title: 'Regnponcho-ridderen', description: 'Vær, regn eller vind er rapportert. Frivillig. Nesten.', metric: 'weatherWarriorReviews', target: 1 },
+  { id: 'vaffelvarsler-deluxe', icon: '🧇', title: 'Vaffelvarsler Deluxe', description: '10 fasilitetsbidrag. Appens uoffisielle kiosktilsyn.', metric: 'facilityReports', target: 10 },
+  { id: 'glem-bil', icon: '🚶', title: 'Glem bil', description: '3 parkeringsvurderinger med dårligste alternativ. Folket er advart.', metric: 'noCarParkingReviews', target: 3 },
+  { id: 'sitteplass-sheriffen', icon: '🤠', title: 'Sitteplass-sheriffen', description: '25 sitteplassvurderinger. Patruljerer tribuner med øm korsrygg.', metric: 'seatingReports', target: 25 },
+  { id: 'mini-arkitekten', icon: '🏗️', title: 'Mini-arkitekten', description: '5 manglende anlegg foreslått. Kartet bygges én sliten tribune av gangen.', metric: 'venueRequests', target: 5 },
+  { id: 'førstemann-på-plass', icon: '⏱️', title: 'Førstemann på plass', description: 'Første vurdering på et nytt anlegg. Noen måtte teste benken først.', metric: 'firstReviews', target: 1 },
+  { id: 'folkets-rumpeombud', icon: RUMPE_ICON, title: 'Folkets rumpeombud', description: '50 vurderinger totalt. Taler sitteflatenes sak i hele landet.', metric: 'checkIns', target: 50 },
+  { id: 'tribunesliter-elite', icon: '🏆', title: 'Tribunesliter Elite', description: '100 vurderinger totalt. På dette nivået bør du få egen klappstol.', metric: 'checkIns', target: 100 },
+  { id: 'aldri-igjen', icon: '💀', title: 'Aldri igjen', description: 'Laveste vurdering på alt ved ett anlegg. Dette anlegget er nå offisielt en prøvelse.', metric: 'allBadReviews', target: 1, hidden: true },
+  { id: 'overraskende-bra', icon: '✨', title: 'Overraskende bra', description: 'Toppvurdering på et lite vurdert anlegg. Noen ganger leverer bortebanen.', metric: 'perfectSmallVenueReviews', target: 1, hidden: true },
+  { id: 'kald-kaffe-klubben', icon: '☕', title: 'Kald kaffe-klubben', description: 'Kommentar som nevner kaffe, kiosk eller vaffel. Temperaturen diskuteres.', metric: 'coffeeComments', target: 1, hidden: true },
+  { id: 'rompe-mot-nordavind', icon: '🥶', title: 'Rompe mot nordavind', description: 'Kommentar som nevner kulde, vind eller frysing. Du satt ute for fellesskapet.', metric: 'coldWeatherComments', target: 1, hidden: true },
+  { id: 'dommerens-skyld', icon: '🟨', title: 'Dommerens skyld', description: 'Kommentar som nevner dommer. Badgen deles ut automatisk, uansett om det stemmer.', metric: 'refereeComments', target: 1, hidden: true },
 ];
+
+const BADGE_PROGRESS_DEFAULTS = {
+  checkIns: 0,
+  facilityReports: 0,
+  venueRequests: 0,
+  outdoorReviews: 0,
+  indoorReviews: 0,
+  kioskReports: 0,
+  toiletReports: 0,
+  parkingReports: 0,
+  badViewReviews: 0,
+  badSeatReviews: 0,
+  seatingReports: 0,
+  lateReviews: 0,
+  weatherWarriorReviews: 0,
+  noCarParkingReviews: 0,
+  firstReviews: 0,
+  allBadReviews: 0,
+  perfectSmallVenueReviews: 0,
+  coffeeComments: 0,
+  coldWeatherComments: 0,
+  refereeComments: 0,
+  uniqueVenueIds: [],
+  municipalityCounts: {},
+  municipalityVenueIds: {},
+};
 
 function timeoutAfter(message, ms = APP_REQUEST_TIMEOUT_MS) {
   return new Promise((_, reject) => {
@@ -440,22 +491,166 @@ function withTimeout(promise, message, ms) {
   return Promise.race([promise, timeoutAfter(message, ms)]);
 }
 
+function sanitizeBadgeProgress(progress = {}) {
+  const next = { ...BADGE_PROGRESS_DEFAULTS, ...(progress || {}) };
+  next.uniqueVenueIds = Array.isArray(next.uniqueVenueIds) ? next.uniqueVenueIds.filter(Boolean) : [];
+  next.municipalityCounts = next.municipalityCounts && typeof next.municipalityCounts === 'object' && !Array.isArray(next.municipalityCounts)
+    ? next.municipalityCounts
+    : {};
+  next.municipalityVenueIds = next.municipalityVenueIds && typeof next.municipalityVenueIds === 'object' && !Array.isArray(next.municipalityVenueIds)
+    ? next.municipalityVenueIds
+    : {};
+  Object.entries(next.municipalityVenueIds).forEach(([municipality, ids]) => {
+    next.municipalityVenueIds[municipality] = Array.isArray(ids) ? ids.filter(Boolean) : [];
+  });
+  return next;
+}
+
 function readBadgeProgress() {
-  if (typeof window === 'undefined') return { checkIns: 0, facilityReports: 0, venueRequests: 0 };
+  if (typeof window === 'undefined') return sanitizeBadgeProgress();
   try {
-    return {
-      checkIns: 0,
-      facilityReports: 0,
-      venueRequests: 0,
-      ...(JSON.parse(window.localStorage.getItem(BADGE_PROGRESS_KEY) || '{}') || {}),
-    };
+    return sanitizeBadgeProgress(JSON.parse(window.localStorage.getItem(BADGE_PROGRESS_KEY) || '{}') || {});
   } catch {
-    return { checkIns: 0, facilityReports: 0, venueRequests: 0 };
+    return sanitizeBadgeProgress();
   }
 }
 
 function badgeValue(progress, badge) {
-  return Number(progress?.[badge.metric] || 0);
+  const safeProgress = sanitizeBadgeProgress(progress);
+  if (badge.metric === 'uniqueVenues') return safeProgress.uniqueVenueIds.length;
+  if (badge.metric === 'bestMunicipalityCount') {
+    const uniqueCounts = Object.values(safeProgress.municipalityVenueIds || {}).map((ids) => Array.isArray(ids) ? ids.length : 0);
+    if (uniqueCounts.length) return Math.max(0, ...uniqueCounts);
+    return Math.max(0, ...Object.values(safeProgress.municipalityCounts || {}).map((value) => Number(value || 0)));
+  }
+  return Number(safeProgress?.[badge.metric] || 0);
+}
+
+function mergeBadgeProgress(current, patch = {}) {
+  const next = sanitizeBadgeProgress(current);
+  Object.entries(patch || {}).forEach(([key, value]) => {
+    if (key === 'uniqueVenueIds') {
+      const incoming = Array.isArray(value) ? value : [value];
+      next.uniqueVenueIds = [...new Set([...next.uniqueVenueIds, ...incoming.filter(Boolean)])];
+      return;
+    }
+    if (key === 'municipalityCounts') {
+      Object.entries(value || {}).forEach(([municipality, count]) => {
+        if (!municipality) return;
+        next.municipalityCounts[municipality] = Number(next.municipalityCounts[municipality] || 0) + Number(count || 0);
+      });
+      return;
+    }
+    if (key === 'municipalityVenueIds') {
+      Object.entries(value || {}).forEach(([municipality, ids]) => {
+        if (!municipality) return;
+        const incoming = Array.isArray(ids) ? ids : [ids];
+        next.municipalityVenueIds[municipality] = [...new Set([...(next.municipalityVenueIds[municipality] || []), ...incoming.filter(Boolean)])];
+      });
+      return;
+    }
+    next[key] = Number(next[key] || 0) + Number(value || 0);
+  });
+  return next;
+}
+
+function textMatches(value, pattern) {
+  return pattern.test(String(value || '').toLowerCase());
+}
+
+function isBadSeating(form) {
+  return Number(form?.comfort_score || form?.facility_seat_comfort || 0) <= 2
+    || Number(form?.facility_seat_comfort || 0) <= 2
+    || textMatches(form?.facility_seating_type, /betong|stå|ingen|hard|vond|dårlig/);
+}
+
+function isBadView(form) {
+  return Number(form?.view_score || 0) <= 2 || Number(form?.facility_view_quality || 0) <= 2;
+}
+
+function isWeatherWarrior(form, venueIsOutdoor) {
+  if (!venueIsOutdoor) return false;
+  return Number(form?.temperature_score || 0) <= 2
+    || Number(form?.facility_heating_level || 0) <= 2
+    || textMatches(`${form?.comment || ''} ${form?.facility_notes || ''}`, /regn|vått|våt|kald|frys|vind|storm|snø|sludd/);
+}
+
+function isColdWeatherComment(form) {
+  return textMatches(`${form?.comment || ''} ${form?.facility_notes || ''}`, /kald|frys|vind|nordavind|snø|sludd/);
+}
+
+function isCoffeeComment(form) {
+  return textMatches(`${form?.comment || ''} ${form?.facility_notes || ''} ${form?.facility_kiosk_status || ''}`, /kaffe|kiosk|vaffel|kake|pølse/);
+}
+
+function isRefereeComment(form) {
+  return textMatches(form?.comment, /dommer|dømming|gult kort|rødt kort|frispark|straffe/);
+}
+
+function isAllBadReview(form) {
+  const mainScores = [form?.comfort_score, form?.view_score, form?.temperature_score, form?.accessibility_score].map(Number);
+  if (!mainScores.every((value) => value === 1)) return false;
+  if (!form?.include_facilities) return true;
+  const facilityScores = [form?.facility_seat_comfort, form?.facility_view_quality, form?.facility_heating_level, form?.facility_toilet_quality].map(Number);
+  return facilityScores.every((value) => value === 1) && parkingLabel(form?.facility_parking) === 'Glem bil';
+}
+
+function isPerfectReview(form) {
+  const scores = [form?.comfort_score, form?.view_score, form?.temperature_score, form?.accessibility_score].map(Number);
+  return scores.every((value) => value === 5);
+}
+
+function buildReviewBadgeProgressPatch(form, venue) {
+  const venueIsOutdoor = Boolean(venue?.is_outdoor);
+  const venueId = form?.venue_id || venue?.id || '';
+  const municipality = venue?.municipality || form?.venue_municipality || '';
+  const includeFacilities = Boolean(form?.include_facilities);
+  const patch = {
+    checkIns: 1,
+    seatingReports: 1,
+    uniqueVenueIds: venueId ? [venueId] : [],
+    municipalityCounts: municipality ? { [municipality]: 1 } : {},
+    municipalityVenueIds: municipality && venueId ? { [municipality]: [venueId] } : {},
+    outdoorReviews: venueIsOutdoor ? 1 : 0,
+    indoorReviews: venueIsOutdoor ? 0 : 1,
+    badSeatReviews: isBadSeating(form) ? 1 : 0,
+    badViewReviews: isBadView(form) ? 1 : 0,
+    weatherWarriorReviews: isWeatherWarrior(form, venueIsOutdoor) ? 1 : 0,
+    lateReviews: new Date().getHours() >= 20 ? 1 : 0,
+    firstReviews: Number(venue?.review_count || 0) === 0 ? 1 : 0,
+    allBadReviews: isAllBadReview(form) ? 1 : 0,
+    perfectSmallVenueReviews: isPerfectReview(form) && Number(venue?.review_count || 0) <= 1 ? 1 : 0,
+    coffeeComments: isCoffeeComment(form) ? 1 : 0,
+    coldWeatherComments: isColdWeatherComment(form) ? 1 : 0,
+    refereeComments: isRefereeComment(form) ? 1 : 0,
+  };
+
+  if (includeFacilities) {
+    patch.facilityReports = 1;
+    patch.kioskReports = form?.facility_kiosk_status ? 1 : 0;
+    patch.toiletReports = Number(form?.facility_toilet_quality || 0) ? 1 : 0;
+    patch.parkingReports = form?.facility_parking ? 1 : 0;
+    patch.noCarParkingReviews = parkingLabel(form?.facility_parking) === 'Glem bil' ? 1 : 0;
+  }
+
+  return patch;
+}
+
+function buildFacilityBadgeProgressPatch(form, venue) {
+  const venueIsOutdoor = Boolean(venue?.is_outdoor);
+  return {
+    facilityReports: 1,
+    seatingReports: 1,
+    kioskReports: form?.facility_kiosk_status ? 1 : 0,
+    toiletReports: Number(form?.facility_toilet_quality || 0) ? 1 : 0,
+    parkingReports: form?.facility_parking ? 1 : 0,
+    noCarParkingReviews: parkingLabel(form?.facility_parking) === 'Glem bil' ? 1 : 0,
+    badSeatReviews: isBadSeating(form) ? 1 : 0,
+    badViewReviews: isBadView(form) ? 1 : 0,
+    weatherWarriorReviews: isWeatherWarrior(form, venueIsOutdoor) ? 1 : 0,
+    coffeeComments: isCoffeeComment(form) ? 1 : 0,
+    coldWeatherComments: isColdWeatherComment(form) ? 1 : 0,
+  };
 }
 
 function errorMessage(error, fallback = 'Ukjent feil.') {
@@ -693,12 +888,7 @@ export default function App() {
   }
 
   function addBadgeProgress(patch) {
-    setBadgeProgress((current) => ({
-      ...current,
-      checkIns: Number(current.checkIns || 0) + Number(patch.checkIns || 0),
-      facilityReports: Number(current.facilityReports || 0) + Number(patch.facilityReports || 0),
-      venueRequests: Number(current.venueRequests || 0) + Number(patch.venueRequests || 0),
-    }));
+    setBadgeProgress((current) => mergeBadgeProgress(current, patch));
   }
 
   async function shareVenue(venue) {
@@ -790,11 +980,13 @@ export default function App() {
     }
 
     try {
-      await submitReview({ ...reviewForm, venue_id: targetVenueId });
+      const targetVenue = venues.find((venue) => venue.id === targetVenueId) || selectedVenue;
+      const payload = { ...reviewForm, venue_id: targetVenueId, venue_municipality: targetVenue?.municipality || reviewForm.venue_municipality };
+      await submitReview(payload);
       await refreshVenues();
       setReviews(await fetchReviews(targetVenueId));
       setSelectedVenueId(targetVenueId);
-      addBadgeProgress({ checkIns: 1, facilityReports: reviewForm.include_facilities ? 1 : 0 });
+      addBadgeProgress(buildReviewBadgeProgressPatch(payload, targetVenue));
       setReviewForm(makeEmptyReview());
       setNotice('Vurderingen er publisert. Takk for bidraget!');
       go('thanks', targetVenueId);
@@ -811,9 +1003,11 @@ export default function App() {
       return;
     }
     try {
-      await submitFacilityReport({ ...facilityForm, venue_id: targetVenueId, venue_name: selectedVenue?.name || facilityForm.venue_name });
-      setFacilityForm(makeFacilityReportFromVenue(selectedVenue));
-      addBadgeProgress({ facilityReports: 1 });
+      const targetVenue = venues.find((venue) => venue.id === targetVenueId) || selectedVenue;
+      const payload = { ...facilityForm, venue_id: targetVenueId, venue_name: targetVenue?.name || facilityForm.venue_name };
+      await submitFacilityReport(payload);
+      setFacilityForm(makeFacilityReportFromVenue(targetVenue));
+      addBadgeProgress(buildFacilityBadgeProgressPatch(payload, targetVenue));
       await refreshVenues();
       go('venue', targetVenueId);
       setNotice('Fasilitetsinfo er publisert. Takk for ryddingen!');
@@ -1871,9 +2065,10 @@ function BadgePanel({ progress }) {
         {BADGE_DEFINITIONS.map((badge) => {
           const value = badgeValue(progress, badge);
           const unlocked = value >= badge.target;
+          if (badge.hidden && !unlocked) return null;
           const percent = Math.min(100, Math.round((value / badge.target) * 100));
           return (
-            <article className={cx('badge-card', unlocked && 'badge-card--unlocked')} key={badge.id}>
+            <article className={cx('badge-card', unlocked && 'badge-card--unlocked', badge.hidden && 'badge-card--secret')} key={badge.id}>
               <div className="badge-card__icon"><IconGlyph icon={badge.icon} /></div>
               <div>
                 <strong>{badge.title}</strong>

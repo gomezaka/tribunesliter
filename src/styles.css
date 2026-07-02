@@ -861,6 +861,18 @@ input[type="range"] { accent-color: var(--amber); padding: 0; border: 0; box-sha
 }
 .badge-card__icon .inline-rumpe-icon { width: 34px; height: 34px; }
 .badge-card--unlocked .badge-card__icon { background: var(--amber-tint); }
+
+.badge-card--secret {
+  border-style: dashed;
+}
+
+.badge-card--secret strong::after {
+  content: ' hemmelig';
+  color: var(--amber-text);
+  font: 900 9px/1 Manrope;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 .badge-card strong { display: block; color: var(--ink); font: 900 15px/1.1 Archivo; }
 .badge-card p { margin: 3px 0 7px; color: var(--muted); font: 700 12px/1.25 Manrope; }
 .badge-card span { color: var(--text); font: 900 10px/1 Manrope; }

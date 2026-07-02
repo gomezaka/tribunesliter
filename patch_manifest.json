@@ -1,7 +1,7 @@
 {
-  "name": "Tribunesliter unified vurdering patch",
-  "version": "0.2.12",
-  "description": "Samler praktisk info og rating i én Vurdering, fjerner duplisering og fjerner garderobe/dusj fra app og schema.",
+  "name": "Tribunesliter alle badges patch",
+  "version": "0.2.13",
+  "description": "Legger inn alle foreslåtte badges, nye lokale badge-tellere og hemmelige badges som kun vises når de låses opp.",
   "files": [
     "src/App.jsx",
     "src/styles.css",
