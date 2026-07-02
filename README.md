@@ -1,12 +1,13 @@
-# Tribunesliter v2.10
+# Tribunesliter v0.2.12
 
 Liten designoppdatering på forsiden.
 
-Nytt i v2.10:
+Nytt i v0.2.12:
 
-- Forsidetoppen bruker nå sporty logo-bar med grønt 🍑-merke og tydelig wordmark.
-- Regionvelgeren ligger under logoen med teksten `Din region` og `Viken ⌄`.
-- Den store forsidesetningen er fjernet, slik at søk og filter kommer raskere frem slik designreferansen beskriver.
+- Vurderinger publiseres direkte med navn/kallenavn.
+- Moderatorpanelet brukes til ettersjekk og skjuling av synlige vurderinger.
+- Humorbadges teller sjekk-ins, fasilitetsbidrag og anleggsforslag lokalt på enheten.
+- Supabase-policyer håndhever samme modell som klienten.
 
 # Tribunesliter — tribune- og hallapp
 
@@ -19,7 +20,7 @@ Målet er at folk skal kunne:
 - se pakkeliste for anlegget
 - legge inn vurderinger
 - foreslå nye haller/anlegg
-- moderere innsendinger før de vises offentlig
+- skjule upassende vurderinger etter publisering
 
 ## Nytt i v0.2.6
 
@@ -31,13 +32,13 @@ Målet er at folk skal kunne:
 
 ## Tidligere i v0.2.3
 
-- Ekte modereringsflyt i appen
-- Godkjenn/avvis ventende vurderinger
-- Skjul allerede publiserte vurderinger
+- Ekte ettersjekk i moderatorpanelet
+- Vurderinger publiseres direkte
+- Skjul allerede publiserte vurderinger i moderatorpanelet
 - Godkjenn/avvis nye anleggsforslag
 - Rediger navn, kommune, adresse, type og ute/inne før anlegg publiseres
 - Strammere vurderingsskjema med egen fasilitetsrapport
-- Fasilitetsrapport lagres i `facility_reports` og kan brukes til offentlig hallprofil etter godkjenning
+- Fasilitetsrapport lagres i `facility_reports` og oppdaterer offentlig hallprofil direkte
 - SQL-scriptet migrerer eldre v0.2/v0.2.1-tabeller trygt
 - Fikset tidligere løs/duplisert `with check`-linje i SQL
 
@@ -149,19 +150,22 @@ Etterpå logger du ut og inn igjen, eller oppdaterer siden. Profilen skal da vis
 
 ## Datamodell
 
-Alle kan lese godkjent innhold.
+Alle kan lese publisert innhold.
+
+Alle kan sende inn direkte:
+
+- `reviews` med `status = approved`
+- `facility_reports` med `status = approved`
 
 Innloggede brukere kan sende inn:
 
-- `reviews` med `status = pending`
-- `facility_reports` med `status = pending`
 - `venue_requests` med `status = pending`
 
 Moderator/admin kan:
 
-- sette vurderinger til `approved`
 - avvise vurderinger med `rejected`
 - skjule publiserte vurderinger med `hidden`
+- skjule feil fasilitetsinfo ved å sette fasilitetsrapport til `rejected`
 - godkjenne anleggsforslag og opprette offentlig hall i `venues`
 - avvise anleggsforslag
 
@@ -186,8 +190,8 @@ Denne versjonen gjør appen mer klar for ekte betatest:
 
 - bedre søk, kommune-/idrettsfilter og sortering
 - egen visning for å rapportere feil/oppdatert fasilitetsinfo
-- moderator kan godkjenne/avvise fasilitetsrapporter
-- godkjent fasilitetsrapport oppdaterer hallprofilen
+- moderator kan skjule/avvise feil fasilitetsinfo etter publisering
+- nyeste publiserte fasilitetsrapport oppdaterer hallprofilen
 - hallprofil viser anleggsinfo, kartlenke og når fasilitetsdata sist ble bekreftet
 - vurderingsskjemaet inkluderer garderobe og dusj
 
@@ -198,7 +202,7 @@ Etter oppdatering må `docs/supabase-schema.sql` kjøres på nytt i Supabase, fo
 
 Denne versjonen inneholder `docs/supabase-seed-ostfold-v1.sql`.
 
-Kjør filen i Supabase SQL Editor etter at hovedschemaet er kjørt. Den legger inn et første sett med godkjente haller/anlegg i Østfold uten å overskrive eksisterende rader. Fasilitetsdata legges ikke inn automatisk; de skal fylles inn av brukere via «Rett info» og modereres.
+Kjør filen i Supabase SQL Editor etter at hovedschemaet er kjørt. Den legger inn et første sett med godkjente haller/anlegg i Østfold uten å overskrive eksisterende rader. Fasilitetsdata legges ikke inn automatisk; de fylles inn av brukere via «Rett info».
 
 ## Fylkes-seeding
 

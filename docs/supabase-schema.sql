@@ -33,6 +33,8 @@ create table if not exists public.facility_reports (
   id uuid primary key default gen_random_uuid(),
   venue_id uuid not null references public.venues(id) on delete cascade,
   user_id uuid references auth.users(id) on delete set null,
+  anonymous_device_id text,
+  user_name text,
   seating_type text,
   seat_comfort int check (seat_comfort between 1 and 5),
   has_backrest boolean not null default false,
@@ -56,6 +58,8 @@ create table if not exists public.reviews (
   id uuid primary key default gen_random_uuid(),
   venue_id uuid not null references public.venues(id) on delete cascade,
   user_id uuid references auth.users(id) on delete set null,
+  anonymous_device_id text,
+  user_name text,
   tribunesliter_minutes int not null check (tribunesliter_minutes between 1 and 180),
   comfort_score int not null check (comfort_score between 1 and 5),
   view_score int not null check (view_score between 1 and 5),
@@ -88,6 +92,12 @@ create table if not exists public.venue_requests (
 -- Migrering for databaser som allerede kjører v0.2/v0.2.1.
 alter table public.facility_reports add column if not exists status text;
 alter table public.reviews add column if not exists status text;
+alter table public.facility_reports add column if not exists anonymous_device_id text;
+alter table public.reviews add column if not exists anonymous_device_id text;
+alter table public.facility_reports add column if not exists user_name text;
+alter table public.reviews add column if not exists user_name text;
+alter table public.facility_reports add column if not exists garderobe_quality int check (garderobe_quality between 1 and 5);
+alter table public.facility_reports add column if not exists shower_quality int check (shower_quality between 1 and 5);
 alter table public.profiles add column if not exists username text;
 alter table public.venue_requests add column if not exists venue_id uuid references public.venues(id) on delete set null;
 alter table public.venue_requests add column if not exists processed_by uuid references auth.users(id) on delete set null;
@@ -121,9 +131,28 @@ end $$;
 
 create index if not exists venues_status_name_idx on public.venues(status, name);
 create index if not exists reviews_venue_status_created_idx on public.reviews(venue_id, status, created_at desc);
+create index if not exists reviews_anonymous_device_idx on public.reviews(anonymous_device_id) where anonymous_device_id is not null;
 create index if not exists facility_reports_venue_status_created_idx on public.facility_reports(venue_id, status, created_at desc);
+create index if not exists facility_reports_anonymous_device_idx on public.facility_reports(anonymous_device_id) where anonymous_device_id is not null;
 create index if not exists venue_requests_status_created_idx on public.venue_requests(status, created_at desc);
 create unique index if not exists profiles_username_unique_idx on public.profiles(lower(username)) where username is not null;
+
+do $$
+begin
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'reviews_device_venue_visit_unique_idx')
+    and not exists (
+      select 1
+      from (
+        select venue_id, anonymous_device_id, visit_date
+        from public.reviews
+        where anonymous_device_id is not null
+        group by venue_id, anonymous_device_id, visit_date
+        having count(*) > 1
+      ) duplicates
+    ) then
+    execute 'create unique index reviews_device_venue_visit_unique_idx on public.reviews(venue_id, anonymous_device_id, visit_date) where anonymous_device_id is not null';
+  end if;
+end $$;
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -163,7 +192,7 @@ create view public.approved_reviews_public as
 select
   r.id,
   r.venue_id,
-  coalesce(p.display_name, p.username, 'Innlogget bruker') as user_name,
+  coalesce(nullif(r.user_name, ''), p.display_name, p.username, 'Innlogget bruker') as user_name,
   r.tribunesliter_minutes,
   r.comfort_score,
   r.view_score,
@@ -268,6 +297,12 @@ drop policy if exists "Users can read own profile" on public.profiles;
 drop policy if exists "Admins can update profiles" on public.profiles;
 drop policy if exists "Logged in users can submit reviews" on public.reviews;
 drop policy if exists "Logged in users can submit facilities" on public.facility_reports;
+drop policy if exists "Anyone can submit approved reviews" on public.reviews;
+drop policy if exists "Anyone can submit approved facilities" on public.facility_reports;
+drop policy if exists "Anonymous can submit pending reviews" on public.reviews;
+drop policy if exists "Logged in users can submit approved reviews" on public.reviews;
+drop policy if exists "Anonymous can submit pending facilities" on public.facility_reports;
+drop policy if exists "Logged in users can submit approved facilities" on public.facility_reports;
 drop policy if exists "Anyone logged in can request venue" on public.venue_requests;
 drop policy if exists "Users can see own venue requests" on public.venue_requests;
 drop policy if exists "Moderators can insert venues" on public.venues;
@@ -278,54 +313,69 @@ drop policy if exists "Moderators can update venue requests" on public.venue_req
 
 -- Lesing
 create policy "Public can read approved venues" on public.venues
-  for select using (status = 'approved' or public.current_user_role() in ('moderator', 'admin'));
+  for select using (status = 'approved' or (select public.current_user_role()) in ('moderator', 'admin'));
 
 create policy "Public can read approved reviews" on public.reviews
-  for select using (status = 'approved' or user_id = auth.uid() or public.current_user_role() in ('moderator', 'admin'));
+  for select using (status = 'approved' or user_id = auth.uid() or (select public.current_user_role()) in ('moderator', 'admin'));
 
 create policy "Public can read approved facilities" on public.facility_reports
-  for select using (status = 'approved' or user_id = auth.uid() or public.current_user_role() in ('moderator', 'admin'));
+  for select using (status = 'approved' or user_id = auth.uid() or (select public.current_user_role()) in ('moderator', 'admin'));
 
 create policy "Users can read own profile" on public.profiles
-  for select using (id = auth.uid() or public.current_user_role() in ('moderator', 'admin'));
+  for select using (id = auth.uid() or (select public.current_user_role()) in ('moderator', 'admin'));
 
 -- Admin kan senere gi moderatorrolle videre.
 create policy "Admins can update profiles" on public.profiles
-  for update using (public.current_user_role() = 'admin')
-  with check (public.current_user_role() = 'admin');
+  for update using ((select public.current_user_role()) = 'admin')
+  with check ((select public.current_user_role()) = 'admin');
 
--- Innsending. Vanlige brukere får bare sende inn ventende innhold.
-create policy "Logged in users can submit reviews" on public.reviews
-  for insert with check (auth.uid() is not null and user_id = auth.uid() and status = 'pending' and approved = false);
+-- Innsending. Vurderinger publiseres direkte og kan skjules av moderator i etterkant.
+create policy "Anyone can submit approved reviews" on public.reviews
+  for insert with check (
+    status = 'approved'
+    and approved = true
+    and (user_id is null or user_id = auth.uid())
+    and length(trim(coalesce(user_name, ''))) between 2 and 40
+    and (anonymous_device_id is null or char_length(anonymous_device_id) <= 80)
+    and visit_date <= current_date
+    and char_length(coalesce(comment, '')) <= 500
+  );
 
-create policy "Logged in users can submit facilities" on public.facility_reports
-  for insert with check (auth.uid() is not null and user_id = auth.uid() and status = 'pending' and approved = false);
+create policy "Anyone can submit approved facilities" on public.facility_reports
+  for insert with check (
+    status = 'approved'
+    and approved = true
+    and (user_id is null or user_id = auth.uid())
+    and length(trim(coalesce(user_name, ''))) between 2 and 40
+    and (anonymous_device_id is null or char_length(anonymous_device_id) <= 80)
+    and char_length(coalesce(notes, '')) <= 500
+  );
 
 create policy "Anyone logged in can request venue" on public.venue_requests
-  for insert with check (auth.uid() is not null and user_id = auth.uid() and status = 'pending');
+  for insert with check (auth.uid() is not null and user_id = auth.uid() and status = 'pending' and char_length(coalesce(notes, '')) <= 500);
 
 create policy "Users can see own venue requests" on public.venue_requests
-  for select using (user_id = auth.uid() or public.current_user_role() in ('moderator', 'admin'));
+  for select using (user_id = auth.uid() or (select public.current_user_role()) in ('moderator', 'admin'));
 
 -- Moderator/admin kan publisere, avvise og skjule.
 create policy "Moderators can insert venues" on public.venues
-  for insert with check (public.current_user_role() in ('moderator', 'admin'));
+  for insert with check ((select public.current_user_role()) in ('moderator', 'admin'));
 
 create policy "Moderators can update venues" on public.venues
-  for update using (public.current_user_role() in ('moderator', 'admin'))
-  with check (public.current_user_role() in ('moderator', 'admin'));
+  for update using ((select public.current_user_role()) in ('moderator', 'admin'))
+  with check ((select public.current_user_role()) in ('moderator', 'admin'));
 
 create policy "Moderators can update reviews" on public.reviews
-  for update using (public.current_user_role() in ('moderator', 'admin'))
-  with check (public.current_user_role() in ('moderator', 'admin'));
+  for update using ((select public.current_user_role()) in ('moderator', 'admin'))
+  with check ((select public.current_user_role()) in ('moderator', 'admin'));
 
 create policy "Moderators can update facilities" on public.facility_reports
-  for update using (public.current_user_role() in ('moderator', 'admin'))
-  with check (public.current_user_role() in ('moderator', 'admin'));
+  for update using ((select public.current_user_role()) in ('moderator', 'admin'))
+  with check ((select public.current_user_role()) in ('moderator', 'admin'));
 
 create policy "Moderators can update venue requests" on public.venue_requests
-  for update using (public.current_user_role() in ('moderator', 'admin'))
-  with check (public.current_user_role() in ('moderator', 'admin'));
+  for update using ((select public.current_user_role()) in ('moderator', 'admin'))
+  with check ((select public.current_user_role()) in ('moderator', 'admin'));
 
 -- Demo-/startdata. Kan slettes etterpå.
 insert into public.venues (name, municipality, address, venue_type, sport_tags, cover_emoji, is_outdoor, status)

@@ -1,6 +1,6 @@
 {
   "name": "tribunesliter-app",
-  "version": "0.2.10",
+  "version": "0.2.12",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,13 +10,13 @@
     "check": "node scripts/check-source.mjs"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "@supabase/supabase-js": "latest"
+    "@supabase/supabase-js": "2.110.0",
+    "@vitejs/plugin-react": "6.0.3",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "vite": "8.1.1"
   },
   "devDependencies": {
-    "typescript": "latest"
+    "typescript": "6.0.3"
   }
 }

@@ -26,12 +26,11 @@ Be hver tester gjøre dette på mobil:
 
 Admin/moderator skal teste:
 
-1. Godkjenn vurdering.
-2. Avvis useriøs vurdering.
-3. Godkjenn fasilitetsrapport.
-4. Avvis fasilitetsrapport.
-5. Godkjenn nytt anlegg etter å ha rettet navn/kommune/adresse.
-6. Skjul en allerede synlig vurdering.
+1. Skjul en useriøs synlig vurdering.
+2. Skjul feil fasilitetsinfo.
+3. Godkjenn nytt anlegg etter å ha rettet navn/kommune/adresse.
+4. Avvis nytt anlegg.
+5. Kontroller at synlige vurderinger fortsatt kan leses på anleggssiden.
 
 ## Sjekkpunkter
 

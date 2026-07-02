@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  approveFacilityReport,
-  approveReview,
   approveVenueRequest,
   fetchPendingModeration,
   fetchReviews,
@@ -12,7 +10,6 @@ import {
   hideReview,
   listenToAuth,
   rejectFacilityReport,
-  rejectReview,
   rejectVenueRequest,
   signInWithUsernamePassword,
   signOut,
@@ -21,14 +18,221 @@ import {
   submitReview,
   submitVenueRequest,
 } from './lib/api';
-import { categories } from './lib/demoData';
 
-const ICON_VERSION = '20260701-gladrompe';
+const ICON_VERSION = '20260702-gladrompe-all';
 const GLAD_RUMPE_ICON_SRC = `/assets/glad-rumpe-icon.png?v=${ICON_VERSION}`;
+const RUMPE_ICON = 'gladrompe';
+
+const RATING_SCALES = {
+  seating: [
+    { value: 1, label: 'Rumpeknekker', emoji: '😫' },
+    { value: 2, label: 'Nummen etter ti minutter', emoji: '😬' },
+    { value: 3, label: 'Standard tribuneliv', emoji: '😐' },
+    { value: 4, label: 'Foreldrevennlig', emoji: '🙂' },
+    { value: 5, label: 'Sofa-følelse', emoji: '😎' },
+  ],
+  view: [
+    { value: 1, label: 'Ser mest bakhoder', emoji: '🙈' },
+    { value: 2, label: 'Stolpe-TV', emoji: '🧱' },
+    { value: 3, label: 'Greit overblikk', emoji: '👀' },
+    { value: 4, label: 'Speiderplass', emoji: '🔭' },
+    { value: 5, label: 'VAR-rommet', emoji: '📺' },
+  ],
+  temperature: [
+    { value: 1, label: 'Fryseboks med fløyte', emoji: '🥶' },
+    { value: 2, label: 'Litt hallgufs', emoji: '🧥' },
+    { value: 3, label: 'Helt greit', emoji: '😐' },
+    { value: 4, label: 'Behagelig inneklima', emoji: '🙂' },
+    { value: 5, label: 'Tropisk tribune', emoji: '🌴' },
+  ],
+  noise: [
+    { value: 1, label: 'Trommehinnetesteren', emoji: '📣' },
+    { value: 2, label: 'Hallbråk deluxe', emoji: '🔊' },
+    { value: 3, label: 'Vanlig kamplyd', emoji: '😐' },
+    { value: 4, label: 'Overraskende levelig', emoji: '🙂' },
+    { value: 5, label: 'Akustisk mirakel', emoji: '✨' },
+  ],
+  weather: [
+    { value: 1, label: 'Rett i fleisen', emoji: '🌧️' },
+    { value: 2, label: 'Hetta må opp', emoji: '🧥' },
+    { value: 3, label: 'Norsk standard', emoji: '☁️' },
+    { value: 4, label: 'Godt skjermet', emoji: '☔' },
+    { value: 5, label: 'Værgudene stoppes her', emoji: '😎' },
+  ],
+  ground: [
+    { value: 1, label: 'Myrvandring', emoji: '🫠' },
+    { value: 2, label: 'Grus i alt', emoji: '🥾' },
+    { value: 3, label: 'Helt greit underlag', emoji: '😐' },
+    { value: 4, label: 'Rent og ryddig', emoji: '🙂' },
+    { value: 5, label: 'Rød løper-følelse', emoji: '🏆' },
+  ],
+  lighting: [
+    { value: 1, label: 'Skyggekamp', emoji: '🌑' },
+    { value: 2, label: 'Halvmørk dugnad', emoji: '🌘' },
+    { value: 3, label: 'Greit lys', emoji: '💡' },
+    { value: 4, label: 'Godt opplyst', emoji: '🔦' },
+    { value: 5, label: 'Stadionlys', emoji: '🏟️' },
+  ],
+  toilet: [
+    { value: 1, label: 'Mangler toalett', emoji: '😱' },
+    { value: 2, label: 'Do finnes, men langt å gå', emoji: '🚶' },
+    { value: 3, label: 'Standard toalett', emoji: '😐' },
+    { value: 4, label: 'Overraskende sivilisert', emoji: '🙂' },
+    { value: 5, label: 'Porselensparadis', emoji: '😇' },
+  ],
+  wardrobe: [
+    { value: 1, label: 'Pose på gulvet', emoji: '🧦' },
+    { value: 2, label: 'Trangt og klamt', emoji: '😬' },
+    { value: 3, label: 'Helt grei garderobe', emoji: '😐' },
+    { value: 4, label: 'God plass', emoji: '🙂' },
+    { value: 5, label: 'Luksusbenken', emoji: '🏆' },
+  ],
+  shower: [
+    { value: 1, label: 'Tørrdusj', emoji: '🚱' },
+    { value: 2, label: 'Lunkent håp', emoji: '🥶' },
+    { value: 3, label: 'Dusj finnes', emoji: '😐' },
+    { value: 4, label: 'Varmt nok', emoji: '🙂' },
+    { value: 5, label: 'Spa etter kamp', emoji: '🚿' },
+  ],
+};
+
+const KIOSK_OPTIONS = [
+  'Tørrmunn-garanti',
+  'Vaffelrykter',
+  'Kaffe og dugnadsvaffel',
+  'God pausemat',
+  'Foreldrebuffet',
+];
+
+const PARKING_OPTIONS = [
+  'Glem bil',
+  'Parkerings-Tetris',
+  'Standard kaos',
+  'God plass',
+  'VIP-forelder',
+];
+
+const REVIEW_CATEGORIES = {
+  indoor: [
+    { key: 'comfort_score', label: 'Sittekomfort', icon: RUMPE_ICON, scale: 'seating' },
+    { key: 'view_score', label: 'Utsikt', icon: '👀', scale: 'view' },
+    { key: 'temperature_score', label: 'Temperatur', icon: '🌡️', scale: 'temperature' },
+    { key: 'accessibility_score', label: 'Lydnivå', icon: '🔊', scale: 'noise' },
+  ],
+  outdoor: [
+    { key: 'comfort_score', label: 'Sittekomfort', icon: RUMPE_ICON, scale: 'seating' },
+    { key: 'view_score', label: 'Utsikt', icon: '👀', scale: 'view' },
+    { key: 'temperature_score', label: 'Værbeskyttelse', icon: '🌧️', scale: 'weather' },
+    { key: 'accessibility_score', label: 'Underlag', icon: '🥾', scale: 'ground' },
+  ],
+};
+
+const FACILITY_RATING_FIELDS = {
+  indoor: [
+    { key: 'facility_seat_comfort', label: 'Sittekomfort', icon: RUMPE_ICON, scale: 'seating' },
+    { key: 'facility_view_quality', label: 'Utsikt', icon: '👀', scale: 'view' },
+    { key: 'facility_heating_level', label: 'Temperatur', icon: '🌡️', scale: 'temperature' },
+    { key: 'facility_noise_level', label: 'Lydnivå', icon: '🔊', scale: 'noise' },
+    { key: 'facility_toilet_quality', label: 'Toalett', icon: '🚻', scale: 'toilet' },
+    { key: 'facility_garderobe_quality', label: 'Garderobe', icon: '🎒', scale: 'wardrobe' },
+    { key: 'facility_shower_quality', label: 'Dusj', icon: '🚿', scale: 'shower' },
+  ],
+  outdoor: [
+    { key: 'facility_seat_comfort', label: 'Sittekomfort', icon: RUMPE_ICON, scale: 'seating' },
+    { key: 'facility_view_quality', label: 'Utsikt', icon: '👀', scale: 'view' },
+    { key: 'facility_heating_level', label: 'Værbeskyttelse', icon: '🌧️', scale: 'weather' },
+    { key: 'facility_noise_level', label: 'Underlag', icon: '🥾', scale: 'ground' },
+    { key: 'facility_accessibility', label: 'Flomlys / synlighet', icon: '💡', scale: 'lighting' },
+    { key: 'facility_toilet_quality', label: 'Toalett', icon: '🚻', scale: 'toilet' },
+  ],
+};
+
+const UNIFIED_RATING_FIELDS = {
+  indoor: [
+    { key: 'comfort_score', facilityKey: 'facility_seat_comfort', label: 'Sittekomfort', icon: RUMPE_ICON, scale: 'seating' },
+    { key: 'view_score', facilityKey: 'facility_view_quality', label: 'Utsikt', icon: '👀', scale: 'view' },
+    { key: 'temperature_score', facilityKey: 'facility_heating_level', label: 'Temperatur', icon: '🌡️', scale: 'temperature' },
+    { key: 'accessibility_score', facilityKey: 'facility_noise_level', label: 'Lydnivå', icon: '🔊', scale: 'noise' },
+    { key: 'facility_toilet_quality', label: 'Toalett', icon: '🚻', scale: 'toilet' },
+    { key: 'facility_garderobe_quality', label: 'Garderobe', icon: '🎒', scale: 'wardrobe' },
+    { key: 'facility_shower_quality', label: 'Dusj', icon: '🚿', scale: 'shower' },
+  ],
+  outdoor: [
+    { key: 'comfort_score', facilityKey: 'facility_seat_comfort', label: 'Sittekomfort', icon: RUMPE_ICON, scale: 'seating' },
+    { key: 'view_score', facilityKey: 'facility_view_quality', label: 'Utsikt', icon: '👀', scale: 'view' },
+    { key: 'temperature_score', facilityKey: 'facility_heating_level', label: 'Værbeskyttelse', icon: '🌧️', scale: 'weather' },
+    { key: 'accessibility_score', facilityKey: 'facility_noise_level', label: 'Underlag', icon: '🥾', scale: 'ground' },
+    { key: 'facility_accessibility', label: 'Flomlys / synlighet', icon: '💡', scale: 'lighting' },
+    { key: 'facility_toilet_quality', label: 'Toalett', icon: '🚻', scale: 'toilet' },
+  ],
+};
+
+const FACILITY_DISPLAY_ROWS = {
+  indoor: [
+    { label: 'Tribune', emoji: '🪑', value: (facilities) => facilities.seating_type || 'Ikke registrert' },
+    { label: 'Ryggstøtte', emoji: '🧍', value: (facilities) => yesNo(facilities.has_backrest) },
+    { label: 'Sittekomfort', emoji: RUMPE_ICON, value: (facilities) => ratingLabel('seating', facilities.seat_comfort) },
+    { label: 'Utsikt', emoji: '👀', value: (facilities) => ratingLabel('view', facilities.view_quality) },
+    { label: 'Temperatur', emoji: '🌡️', value: (facilities) => ratingLabel('temperature', facilities.heating_level) },
+    { label: 'Lydnivå', emoji: '🔊', value: (facilities) => ratingLabel('noise', facilities.noise_level) },
+    { label: 'Toalett', emoji: '🚻', value: (facilities) => ratingLabel('toilet', facilities.toilet_quality) },
+    { label: 'Garderobe', emoji: '🎒', value: (facilities) => ratingLabel('wardrobe', facilities.garderobe_quality) },
+    { label: 'Dusj', emoji: '🚿', value: (facilities) => ratingLabel('shower', facilities.shower_quality) },
+    { label: 'Kiosk / kaffe', emoji: '☕', value: (facilities) => kioskLabel(facilities.kiosk_status) },
+    { label: 'Parkering', emoji: '🚗', value: (facilities) => parkingLabel(facilities.parking) },
+  ],
+  outdoor: [
+    { label: 'Tribune/sidelinje', emoji: '🪑', value: (facilities) => facilities.seating_type || 'Ikke registrert' },
+    { label: 'Ryggstøtte', emoji: '🧍', value: (facilities) => yesNo(facilities.has_backrest) },
+    { label: 'Værbeskyttelse', emoji: '🌧️', value: (facilities) => ratingLabel('weather', facilities.heating_level) },
+    { label: 'Underlag', emoji: '🥾', value: (facilities) => ratingLabel('ground', facilities.noise_level) },
+    { label: 'Flomlys / synlighet', emoji: '💡', value: (facilities) => ratingLabel('lighting', facilities.accessibility) },
+    { label: 'Utsikt', emoji: '👀', value: (facilities) => ratingLabel('view', facilities.view_quality) },
+    { label: 'Toalett', emoji: '🚻', value: (facilities) => ratingLabel('toilet', facilities.toilet_quality) },
+    { label: 'Kiosk / kaffe', emoji: '☕', value: (facilities) => kioskLabel(facilities.kiosk_status) },
+    { label: 'Parkering', emoji: '🚗', value: (facilities) => parkingLabel(facilities.parking) },
+  ],
+};
+
+function venueRatingKind(isOutdoor) {
+  return isOutdoor ? 'outdoor' : 'indoor';
+}
+
+function ratingOptions(scaleKey) {
+  return RATING_SCALES[scaleKey] || [];
+}
+
+function ratingLabel(scaleKey, value) {
+  const numericValue = Math.max(1, Math.min(5, Number(value || 0)));
+  return ratingOptions(scaleKey).find((option) => option.value === numericValue)?.label || 'Ikke registrert';
+}
+
+function kioskLabel(value) {
+  const text = String(value || '').trim();
+  if (!text || /^ukjent$/i.test(text)) return 'Vaffelrykter';
+  if (KIOSK_OPTIONS.includes(text)) return text;
+  if (/ingen|mangler/i.test(text)) return 'Tørrmunn-garanti';
+  if (/cup|større/i.test(text)) return 'God pausemat';
+  if (/åpen|dugnad|kiosk|kaffe/i.test(text)) return 'Kaffe og dugnadsvaffel';
+  return text;
+}
+
+function parkingLabel(value) {
+  const text = String(value || '').trim();
+  if (!text || /^ukjent$/i.test(text)) return 'Standard kaos';
+  if (PARKING_OPTIONS.includes(text)) return text;
+  if (/ingen|umulig|gate|glem/i.test(text)) return 'Glem bil';
+  if (/trang|begrenset|tetris/i.test(text)) return 'Parkerings-Tetris';
+  if (/god|lett|stor|mye|masse/i.test(text)) return 'God plass';
+  if (/middels|brukbar|ok|standard/i.test(text)) return 'Standard kaos';
+  return text;
+}
 
 function makeEmptyReview() {
   return {
     venue_id: '',
+    venue_municipality: '',
+    user_name: '',
     tribunesliter_minutes: 25,
     comfort_score: 3,
     view_score: 3,
@@ -42,15 +246,16 @@ function makeEmptyReview() {
     facility_has_backrest: false,
     facility_heating_level: 3,
     facility_toilet_quality: 3,
-    facility_kiosk_status: 'Ukjent',
-    facility_parking: 'Ukjent',
-    facility_accessibility: 3,
-    facility_roof_cover: false,
     facility_garderobe_quality: 3,
     facility_shower_quality: 3,
+    facility_kiosk_status: 'Vaffelrykter',
+    facility_parking: 'Standard kaos',
+    facility_accessibility: 3,
+    facility_roof_cover: false,
     facility_view_quality: 3,
     facility_noise_level: 3,
     facility_notes: '',
+    include_facilities: true,
   };
 }
 
@@ -64,15 +269,31 @@ function makeFacilityReportFromVenue(venue) {
     facility_has_backrest: Boolean(facilities.has_backrest),
     facility_heating_level: Number(facilities.heating_level || 3),
     facility_toilet_quality: Number(facilities.toilet_quality || 3),
-    facility_kiosk_status: facilities.kiosk_status || 'Ukjent',
-    facility_parking: facilities.parking || 'Ukjent',
-    facility_accessibility: Number(facilities.accessibility || 3),
-    facility_roof_cover: Boolean(facilities.roof_cover),
     facility_garderobe_quality: Number(facilities.garderobe_quality || 3),
     facility_shower_quality: Number(facilities.shower_quality || 3),
+    facility_kiosk_status: kioskLabel(facilities.kiosk_status),
+    facility_parking: parkingLabel(facilities.parking),
+    facility_accessibility: Number(facilities.accessibility || 3),
+    facility_roof_cover: Boolean(facilities.roof_cover),
     facility_view_quality: Number(facilities.view_quality || 3),
     facility_noise_level: Number(facilities.noise_level || 3),
     facility_notes: facilities.notes || '',
+  };
+}
+
+function makeReviewFormForVenue(venue, current = makeEmptyReview()) {
+  const facilityValues = makeFacilityReportFromVenue(venue);
+  const venueIsOutdoor = Boolean(venue?.is_outdoor);
+  return {
+    ...current,
+    ...facilityValues,
+    venue_id: venue?.id || current.venue_id || '',
+    venue_municipality: venue?.municipality || current.venue_municipality || '',
+    comfort_score: facilityValues.facility_seat_comfort,
+    view_score: facilityValues.facility_view_quality,
+    temperature_score: facilityValues.facility_heating_level,
+    accessibility_score: venueIsOutdoor ? facilityValues.facility_noise_level : facilityValues.facility_noise_level,
+    include_facilities: true,
   };
 }
 
@@ -87,6 +308,19 @@ const emptyVenueRequest = {
 
 function cx(...parts) {
   return parts.filter(Boolean).join(' ');
+}
+
+function InlineRumpeIcon({ className }) {
+  return <img className={cx('inline-rumpe-icon', className)} src={GLAD_RUMPE_ICON_SRC} alt="" aria-hidden="true" />;
+}
+
+function IconGlyph({ icon, className }) {
+  if (icon === RUMPE_ICON) return <InlineRumpeIcon className={className} />;
+  return <span className={className}>{icon}</span>;
+}
+
+function RumpeText({ children }) {
+  return <span className="rumpe-text">{children}<InlineRumpeIcon /></span>;
 }
 
 function userDisplayName(user, profile, fallback = 'tribunesliter') {
@@ -120,7 +354,7 @@ function stars(value) {
 
 function deriveTribunesliterLabel(minutes) {
   const value = Number(minutes || 0);
-  if (!value) return 'Ingen rumperapporter ennå.';
+  if (!value) return 'Ingen vurderinger ennå.';
   if (value <= 15) return 'Putealarm. Dette er karakterbyggende.';
   if (value <= 25) return 'Kort kamp går fint. Cup blir risikosport.';
   if (value <= 40) return 'Godkjent sitteplass for vanlige folk.';
@@ -154,7 +388,7 @@ function statusLines(venue) {
   if (venue?.is_outdoor) lines.push('🧥 Kle deg for sidelinje');
   else if ((facilities.kiosk_status || '').toLowerCase().includes('kiosk') || facilities.kiosk_status) lines.push('🧇 Kiosk');
   if (Number(venue?.tribunesliter_minutes || 0)) lines.push(`Holder ~${venue.tribunesliter_minutes} min`);
-  else lines.push('Mangler rapporter');
+  else lines.push('Mangler vurderinger');
   return lines.slice(0, 3);
 }
 
@@ -163,14 +397,12 @@ function facilityEmoji(label) {
   if (key.includes('tribune')) return '🪑';
   if (key.includes('rygg')) return '🧍';
   if (key.includes('tak')) return '☔';
-  if (key.includes('sitte')) return '🍑';
+  if (key.includes('sitte')) return RUMPE_ICON;
   if (key.includes('varme')) return '🌡️';
   if (key.includes('kiosk')) return '🧇';
   if (key.includes('parkering')) return '🅿️';
   if (key.includes('toalett')) return '🚻';
   if (key.includes('tilgjeng')) return '♿';
-  if (key.includes('garderobe')) return '🎽';
-  if (key.includes('dusj')) return '🚿';
   if (key.includes('sikt')) return '👀';
   if (key.includes('støy')) return '🔊';
   return '•';
@@ -184,7 +416,19 @@ const quickTags = ['🪑 Ta med pute', '🧥 Kle deg varmt', '🧇 Kiosk verdt k
 const SAVED_VENUES_KEY = 'tribunesliter.savedVenues.v1';
 const RECENT_VENUES_KEY = 'tribunesliter.recentVenues.v1';
 const INSTALL_HINT_DISMISSED_KEY = 'tribunesliter.installHint.dismissed.v1';
+const BADGE_PROGRESS_KEY = 'tribunesliter.badgeProgress.v1';
 const APP_REQUEST_TIMEOUT_MS = 12000;
+const MAX_COMMENT_LENGTH = 500;
+const MAX_NOTES_LENGTH = 500;
+
+const BADGE_DEFINITIONS = [
+  { id: 'startfløyta', icon: '🎺', title: 'Startfløyta', description: 'Første sjekk-inn er levert.', metric: 'checkIns', target: 1 },
+  { id: 'benkevarmer', icon: '🪑', title: 'Benkevarmer', description: '3 baner ratet. Rumpa begynner å få erfaring.', metric: 'checkIns', target: 3 },
+  { id: 'rumpekompass', icon: RUMPE_ICON, title: 'Rumpekompasset', description: '10 sjekk-ins. Du finner benkekvalitet i blinde.', metric: 'checkIns', target: 10 },
+  { id: 'banesliter', icon: '🏟️', title: 'Banesliter', description: '25 sjekk-ins. Lokalidrettens uoffisielle sitteekspert.', metric: 'checkIns', target: 25 },
+  { id: 'vaffelvarsler', icon: '🧇', title: 'Vaffelvarsler', description: '3 fasilitetsbidrag om kiosk, do eller parkering.', metric: 'facilityReports', target: 3 },
+  { id: 'kartfikser', icon: '🗺️', title: 'Kartfikser', description: 'Foreslått et manglende anlegg.', metric: 'venueRequests', target: 1 },
+];
 
 function timeoutAfter(message, ms = APP_REQUEST_TIMEOUT_MS) {
   return new Promise((_, reject) => {
@@ -194,6 +438,24 @@ function timeoutAfter(message, ms = APP_REQUEST_TIMEOUT_MS) {
 
 function withTimeout(promise, message, ms) {
   return Promise.race([promise, timeoutAfter(message, ms)]);
+}
+
+function readBadgeProgress() {
+  if (typeof window === 'undefined') return { checkIns: 0, facilityReports: 0, venueRequests: 0 };
+  try {
+    return {
+      checkIns: 0,
+      facilityReports: 0,
+      venueRequests: 0,
+      ...(JSON.parse(window.localStorage.getItem(BADGE_PROGRESS_KEY) || '{}') || {}),
+    };
+  } catch {
+    return { checkIns: 0, facilityReports: 0, venueRequests: 0 };
+  }
+}
+
+function badgeValue(progress, badge) {
+  return Number(progress?.[badge.metric] || 0);
 }
 
 function errorMessage(error, fallback = 'Ukjent feil.') {
@@ -232,6 +494,7 @@ export default function App() {
   const [venueRequest, setVenueRequest] = useState(emptyVenueRequest);
   const [moderation, setModeration] = useState({ reviews: [], approvedReviews: [], facilityReports: [], venueRequests: [] });
   const [adminBusy, setAdminBusy] = useState('');
+  const [badgeProgress, setBadgeProgress] = useState(readBadgeProgress);
   const [savedVenueIds, setSavedVenueIds] = useState(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -325,6 +588,14 @@ export default function App() {
   }, [recentVenueIds]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(BADGE_PROGRESS_KEY, JSON.stringify(badgeProgress));
+    } catch {
+      // Badge progress is local encouragement, not critical state.
+    }
+  }, [badgeProgress]);
+
+  useEffect(() => {
     function handleBeforeInstallPrompt(event) {
       event.preventDefault();
       setInstallPrompt(event);
@@ -394,6 +665,14 @@ export default function App() {
 
   function go(nextView, venueId) {
     if (venueId) setSelectedVenueId(venueId);
+    if (nextView === 'rate' && venueId) {
+      const venue = venues.find((item) => item.id === venueId);
+      setReviewForm((current) => ({
+        ...current,
+        venue_id: venueId,
+        venue_municipality: venue?.municipality || current.venue_municipality,
+      }));
+    }
     if (nextView === 'venue' && venueId) {
       setRecentVenueIds((current) => [venueId, ...current.filter((id) => id !== venueId)].slice(0, 6));
     }
@@ -411,6 +690,15 @@ export default function App() {
       setNotice(exists ? `${venueName} er fjernet fra lagret.` : `${venueName} er lagret på denne enheten.`);
       return next;
     });
+  }
+
+  function addBadgeProgress(patch) {
+    setBadgeProgress((current) => ({
+      ...current,
+      checkIns: Number(current.checkIns || 0) + Number(patch.checkIns || 0),
+      facilityReports: Number(current.facilityReports || 0) + Number(patch.facilityReports || 0),
+      venueRequests: Number(current.venueRequests || 0) + Number(patch.venueRequests || 0),
+    }));
   }
 
   async function shareVenue(venue) {
@@ -496,18 +784,19 @@ export default function App() {
       setNotice('Velg anlegg først.');
       return;
     }
-    if (!user && hasSupabaseConfig) {
-      setNotice('Du må logge inn før du kan bidra.');
-      go('profile');
+    if (!reviewForm.user_name.trim()) {
+      setNotice('Skriv inn navn eller kallenavn før du sender vurderingen.');
       return;
     }
 
     try {
       await submitReview({ ...reviewForm, venue_id: targetVenueId });
       await refreshVenues();
+      setReviews(await fetchReviews(targetVenueId));
       setSelectedVenueId(targetVenueId);
+      addBadgeProgress({ checkIns: 1, facilityReports: reviewForm.include_facilities ? 1 : 0 });
       setReviewForm(makeEmptyReview());
-      setNotice(hasSupabaseConfig ? 'Vurderingen er sendt til moderering.' : 'Vurderingen er lagt i modereringskø i demoen.');
+      setNotice('Vurderingen er publisert. Takk for bidraget!');
       go('thanks', targetVenueId);
     } catch (error) {
       setNotice(errorMessage(error));
@@ -521,17 +810,13 @@ export default function App() {
       setNotice('Velg anlegg først.');
       return;
     }
-    if (!user && hasSupabaseConfig) {
-      setNotice('Du må logge inn før du kan rapportere fasilitetsinfo.');
-      go('profile');
-      return;
-    }
-
     try {
       await submitFacilityReport({ ...facilityForm, venue_id: targetVenueId, venue_name: selectedVenue?.name || facilityForm.venue_name });
       setFacilityForm(makeFacilityReportFromVenue(selectedVenue));
-      setNotice('Fasilitetsrapporten er sendt til moderering.');
+      addBadgeProgress({ facilityReports: 1 });
+      await refreshVenues();
       go('venue', targetVenueId);
+      setNotice('Fasilitetsinfo er publisert. Takk for ryddingen!');
     } catch (error) {
       setNotice(errorMessage(error));
     }
@@ -548,8 +833,9 @@ export default function App() {
     try {
       await submitVenueRequest(venueRequest);
       setVenueRequest(emptyVenueRequest);
-      setNotice('Forslaget er lagret og må godkjennes før det vises offentlig.');
+      addBadgeProgress({ venueRequests: 1 });
       go('home');
+      setNotice('Forslaget er lagret og må godkjennes før det vises offentlig.');
     } catch (error) {
       setNotice(errorMessage(error));
     }
@@ -654,7 +940,7 @@ export default function App() {
                 reviews={reviews}
                 onBack={() => go('home')}
                 onRate={() => {
-                  setReviewForm((form) => ({ ...form, venue_id: selectedVenue.id }));
+                  setReviewForm((form) => makeReviewFormForVenue(selectedVenue, form));
                   go('rate', selectedVenue.id);
                 }}
                 onReportFacility={() => {
@@ -692,6 +978,7 @@ export default function App() {
                 profile={profile}
                 mode={mode}
                 canModerate={canModerate(profile, mode)}
+                badgeProgress={badgeProgress}
                 notice={notice}
                 authBusy={authBusy}
                 onLogin={handleLogin}
@@ -718,11 +1005,8 @@ export default function App() {
                 busy={adminBusy}
                 onBack={() => go('profile')}
                 onRefresh={refreshModeration}
-                onApproveReview={(id) => runAdminAction(`approve-review-${id}`, () => approveReview(id), 'Vurderingen er godkjent.')}
-                onRejectReview={(id) => runAdminAction(`reject-review-${id}`, () => rejectReview(id), 'Vurderingen er avvist.')}
                 onHideReview={(id) => runAdminAction(`hide-review-${id}`, () => hideReview(id), 'Vurderingen er skjult.')}
-                onApproveFacility={(id) => runAdminAction(`approve-facility-${id}`, () => approveFacilityReport(id), 'Fasilitetsrapporten er godkjent.')}
-                onRejectFacility={(id) => runAdminAction(`reject-facility-${id}`, () => rejectFacilityReport(id), 'Fasilitetsrapporten er avvist.')}
+                onRejectFacility={(id) => runAdminAction(`reject-facility-${id}`, () => rejectFacilityReport(id), 'Fasilitetsinfo er skjult.')}
                 onApproveVenue={(request) => runAdminAction(`approve-venue-${request.id}`, () => approveVenueRequest(request), 'Anlegget er godkjent og publisert.')}
                 onRejectVenue={(id) => runAdminAction(`reject-venue-${id}`, () => rejectVenueRequest(id), 'Anleggsforslaget er avvist.')}
               />
@@ -757,7 +1041,7 @@ function LoadingView() {
     <section className="screen center-screen">
       <img className="loader loader--app-icon" src={GLAD_RUMPE_ICON_SRC} alt="" aria-hidden="true" />
       <h1>Laster Tribunesliter</h1>
-      <p>Henter haller, tribuner og rumpe-rapporter.</p>
+      <p>Henter haller, tribuner og vurderinger.</p>
       <div className="skeleton-list" aria-hidden="true"><span /><span /><span /></div>
     </section>
   );
@@ -788,7 +1072,7 @@ function HomeView({ venues, recentVenues, user, profile, onSearch, onVenue, onNe
 
       <div className="home-stat-strip">
         <InfoCell label="Anlegg" value={venues.length} />
-        <InfoCell label="Rapporter" value={totalReports} />
+        <InfoCell label="Vurderinger" value={totalReports} />
         <InfoCell label="Topp score" value={topVenues[0] ? scoreFromMinutes(topVenues[0].tribunesliter_minutes) : 0} />
       </div>
 
@@ -804,13 +1088,13 @@ function HomeView({ venues, recentVenues, user, profile, onSearch, onVenue, onNe
       </section>
 
       <section className="home-section">
-        <SectionHeader title="Ferske rumpe-rapporter" action="Søk" onAction={onSearch} />
+        <SectionHeader title="Ferske vurderinger" action="Søk" onAction={onSearch} />
         {reportedVenues.length ? (
           <div className="report-feed">
             {reportedVenues.map((venue) => <ReportTeaser key={venue.id} venue={venue} onClick={() => onVenue(venue.id)} />)}
           </div>
         ) : (
-          <EmptyState title="Ingen rumpe-rapporter enda" text="Bli første som tester en tribune og setter standarden." action="Finn hall" onAction={onSearch} />
+          <EmptyState title="Ingen vurderinger enda" text="Bli første som tester en tribune og setter standarden." action="Finn hall" onAction={onSearch} />
         )}
       </section>
 
@@ -853,7 +1137,7 @@ function ReportTeaser({ venue, onClick }) {
       <div className="review-avatar">{venue.name[0]}</div>
       <div>
         <strong>{venue.name}</strong>
-        <span>{venue.review_count} rapporter · {deriveTribunesliterLabel(venue.tribunesliter_minutes)}</span>
+        <span>{venue.review_count} vurderinger · {deriveTribunesliterLabel(venue.tribunesliter_minutes)}</span>
       </div>
       <em>★ {scoreFromMinutes(venue.tribunesliter_minutes) || '–'}</em>
     </button>
@@ -943,7 +1227,7 @@ function SearchView({
           <span>Sorter</span>
           <select value={sortMode} onChange={(event) => onSortMode(event.target.value)}>
             <option value="score">Snillest mot rumpa</option>
-            <option value="reviews">Flest rapporter</option>
+            <option value="reviews">Flest vurderinger</option>
             <option value="municipality">Kommune</option>
             <option value="name">Navn</option>
           </select>
@@ -990,11 +1274,11 @@ function ExploreView({ venues, municipalities, onVenue, onNewVenue }) {
         <InfoCell label="Anlegg" value={venues.length} />
         <InfoCell label="Kommuner" value={municipalities.length} />
         <InfoCell label="Utendørs" value={outdoorCount} />
-        <InfoCell label="Med rapporter" value={ratedCount} />
+        <InfoCell label="Med vurderinger" value={ratedCount} />
       </div>
 
       {grouped.length === 0 ? (
-        <EmptyState title="Ingen anlegg ennå" text="Legg inn første hall, så får utforsk-visningen innhold." action="Foreslå anlegg" onAction={onNewVenue} />
+        <EmptyState title="Ingen anlegg ennå" text="Legg inn vurdering første hall, så får utforsk-visningen innhold." action="Foreslå anlegg" onAction={onNewVenue} />
       ) : (
         <div className="municipality-list">
           {grouped.map((group) => (
@@ -1088,21 +1372,7 @@ function VenueView({ venue, reviews, onBack, onRate, onReportFacility, isSaved, 
   const mapQuery = [venue.name, venue.address, venue.municipality].filter(Boolean).join(', ');
   const score = scoreFromMinutes(venue.tribunesliter_minutes);
   const progressStyle = { '--score': `${score}%` };
-  const facilityRows = [
-    ['Tribune', facilities.seating_type || 'Ikke registrert'],
-    ['Ryggstøtte', yesNo(facilities.has_backrest)],
-    ['Tak/overbygg', yesNo(facilities.roof_cover)],
-    ['Sittekomfort', scoreLabel(facilities.seat_comfort)],
-    ['Varme', scoreLabel(facilities.heating_level)],
-    ['Kiosk', facilities.kiosk_status || 'Ukjent'],
-    ['Parkering', facilities.parking || 'Ukjent'],
-    ['Toalett', scoreLabel(facilities.toilet_quality)],
-    ['Tilgjengelighet', scoreLabel(facilities.accessibility)],
-    ['Garderobe', scoreLabel(facilities.garderobe_quality)],
-    ['Dusj', scoreLabel(facilities.shower_quality)],
-    ['Sikt til banen', scoreLabel(facilities.view_quality)],
-    ['Støynivå', scoreLabel(facilities.noise_level)],
-  ];
+  const facilityRows = FACILITY_DISPLAY_ROWS[venueRatingKind(venue.is_outdoor)].map((row) => [row.label, row.value(facilities), row.emoji]);
 
   return (
     <section className="screen detail-screen">
@@ -1130,9 +1400,9 @@ function VenueView({ venue, reviews, onBack, onRate, onReportFacility, isSaved, 
           </div>
           <div>
             <span className="caps-label">Tribunesliter-score</span>
-            <h2>Rumpa holder ~{venue.tribunesliter_minutes || '–'} min 🍑</h2>
+            <h2><RumpeText>Rumpa holder ~{venue.tribunesliter_minutes || '–'} min</RumpeText></h2>
             <p>{venue.summary || deriveTribunesliterLabel(venue.tribunesliter_minutes || 0)}</p>
-            <small>★ {reviews.length || venue.review_count || 0} rumpa-rapporter</small>
+            <small>★ {reviews.length || venue.review_count || 0} vurderinger</small>
           </div>
         </div>
       </article>
@@ -1145,9 +1415,9 @@ function VenueView({ venue, reviews, onBack, onRate, onReportFacility, isSaved, 
       )}
 
       <div className="subscore-row">
-        <SubScore label="Rumpe-komfort" value={facilities.seat_comfort} emoji="🍑" />
-        <SubScore label="Sikt" value={facilities.view_quality} emoji="👀" />
-        <SubScore label="Kiosk" value={facilities.kiosk_status ? 4 : 1} emoji="🧇" />
+        <SubScore label={ratingLabel('seating', facilities.seat_comfort)} value={facilities.seat_comfort} emoji={RUMPE_ICON} />
+        <SubScore label={venue.is_outdoor ? ratingLabel('weather', facilities.heating_level) : ratingLabel('temperature', facilities.heating_level)} value={facilities.heating_level} emoji={venue.is_outdoor ? '🌧️' : '🌡️'} />
+        <SubScore label={parkingLabel(facilities.parking)} value={PARKING_OPTIONS.indexOf(parkingLabel(facilities.parking)) + 1 || 3} emoji="🚗" />
       </div>
 
       <section className="panel app-card compact-info-grid">
@@ -1163,11 +1433,11 @@ function VenueView({ venue, reviews, onBack, onRate, onReportFacility, isSaved, 
       </section>
 
       <section className="panel app-card">
-        <SectionHeader title="Fasiliteter" action="Rett info" onAction={onReportFacility} />
+        <SectionHeader title="Anleggsinfo" />
         <div className="facility-grid">
-          {facilityRows.map(([label, value]) => (
+          {facilityRows.map(([label, value, emoji]) => (
             <div className="facility-row" key={label}>
-              <span className="facility-row__icon">{facilityEmoji(label)}</span>
+              <span className="facility-row__icon"><IconGlyph icon={emoji || facilityEmoji(label)} /></span>
               <span>{label}</span>
               <strong>{value}</strong>
             </div>
@@ -1184,19 +1454,18 @@ function VenueView({ venue, reviews, onBack, onRate, onReportFacility, isSaved, 
       </section>
 
       <section className="panel app-card">
-        <SectionHeader title="Siste rumpe-rapporter" action="Legg inn" onAction={onRate} />
+        <SectionHeader title="Siste vurderinger" action="Legg inn vurdering" onAction={onRate} />
         <div className="review-list">
           {reviews.length === 0 ? (
-            <EmptyState title="Ingen rumpe-rapporter enda" text="Bli første sliter som logger hvor lenge setet faktisk holder." action="Rate rumpa 🍑" onAction={onRate} />
+            <EmptyState title="Ingen vurderinger enda" text="Bli første sliter som vurderer sitteplassen." action={<RumpeText>Vurder sitteplassen</RumpeText>} onAction={onRate} />
           ) : (
-            reviews.map((review) => <ReviewCard review={review} key={review.id} />)
+            reviews.map((review) => <ReviewCard review={review} venueIsOutdoor={venue.is_outdoor} key={review.id} />)
           )}
         </div>
       </section>
 
-      <div className="sticky-actions">
-        <button className="secondary-action" type="button" onClick={onReportFacility}>Rett info</button>
-        <button className="primary-action" type="button" onClick={onRate}>Rate rumpa 🍑</button>
+      <div className="sticky-actions sticky-actions--single">
+        <button className="primary-action" type="button" onClick={onRate}><RumpeText>Vurder sitteplassen</RumpeText></button>
       </div>
     </section>
   );
@@ -1206,7 +1475,7 @@ function SubScore({ label, value, emoji }) {
   const number = Math.max(1, Math.min(5, Number(value || 1)));
   return (
     <div className="subscore-card">
-      <span>{emoji}</span>
+      <span className="subscore-card__icon"><IconGlyph icon={emoji} /></span>
       <strong>{number}/5</strong>
       <small>{label}</small>
       <i style={{ '--bar': `${number * 20}%` }} />
@@ -1227,7 +1496,8 @@ function SectionHeader({ title, action, onAction }) {
   );
 }
 
-function ReviewCard({ review }) {
+function ReviewCard({ review, venueIsOutdoor = false }) {
+  const categoriesForReview = REVIEW_CATEGORIES[venueRatingKind(venueIsOutdoor)];
   return (
     <article className="review-card">
       <div className="review-card__top">
@@ -1239,14 +1509,62 @@ function ReviewCard({ review }) {
         <span>{review.tribunesliter_minutes} min</span>
       </div>
       <p>{review.comment || 'Ingen kommentar. Men rumpa har talt.'}</p>
-      <div className="review-actions">Nyttig · {Math.max(1, Number(review.comfort_score || 1) * 2)}</div>
+      <div className="review-humor-tags">
+        {categoriesForReview.map((category) => (
+          <span key={category.key}><IconGlyph icon={category.icon} /> {ratingLabel(category.scale, review[category.key])}</span>
+        ))}
+      </div>
     </article>
   );
 }
 
 function RateView({ venues, selectedVenue, form, setForm, onSubmit, onBack }) {
+  const [venueSearch, setVenueSearch] = useState('');
+  const selectedVenueId = form.venue_id || selectedVenue?.id || '';
+  const selectedVenueFromForm = venues.find((venue) => venue.id === selectedVenueId);
+  const selectedMunicipality = form.venue_municipality || selectedVenueFromForm?.municipality || '';
+  const municipalities = useMemo(
+    () => [...new Set(venues.map((venue) => venue.municipality).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'nb')),
+    [venues]
+  );
+  const filteredVenues = useMemo(() => {
+    const normalizedSearch = venueSearch.trim().toLowerCase();
+    return venues
+      .filter((venue) => !selectedMunicipality || venue.municipality === selectedMunicipality)
+      .filter((venue) => {
+        if (!normalizedSearch) return true;
+        return [venue.name, venue.address, venue.venue_type, venue.municipality, ...(venue.sport_tags || [])].join(' ').toLowerCase().includes(normalizedSearch);
+      })
+      .sort((a, b) => `${a.municipality} ${a.name}`.localeCompare(`${b.municipality} ${b.name}`, 'nb'));
+  }, [selectedMunicipality, venueSearch, venues]);
+
   function update(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+  function updateFacility(key, value) {
+    setForm((current) => ({ ...current, include_facilities: true, [key]: value }));
+  }
+  function updateUnified(field, value) {
+    setForm((current) => ({
+      ...current,
+      include_facilities: true,
+      [field.key]: value,
+      ...(field.facilityKey ? { [field.facilityKey]: value } : {}),
+    }));
+  }
+  function updateMunicipality(value) {
+    setForm((current) => {
+      const currentVenue = venues.find((venue) => venue.id === current.venue_id);
+      return {
+        ...current,
+        venue_municipality: value,
+        venue_id: currentVenue && currentVenue.municipality === value ? current.venue_id : '',
+      };
+    });
+  }
+  function updateVenue(value) {
+    const venue = venues.find((item) => item.id === value);
+    setForm((current) => venue ? makeReviewFormForVenue(venue, current) : { ...current, venue_id: '', venue_municipality: current.venue_municipality });
   }
   function addTag(tag) {
     setForm((current) => {
@@ -1255,10 +1573,55 @@ function RateView({ venues, selectedVenue, form, setForm, onSubmit, onBack }) {
     });
   }
 
+  const venueIsOutdoor = Boolean(selectedVenueFromForm?.is_outdoor ?? selectedVenue?.is_outdoor);
+  const ratingKind = venueRatingKind(venueIsOutdoor);
+  const unifiedRatingFields = UNIFIED_RATING_FIELDS[ratingKind];
+
   return (
     <section className="screen detail-screen form-screen">
-      <FormHeader title="Rate rumpa" step="Steg 2 av 3" onBack={onBack} />
+      <FormHeader onBack={onBack} />
       <form className="form-stack" onSubmit={onSubmit}>
+        <section className="form-card app-card">
+          <SectionHeader title="Besøk" />
+          <div className="two-cols">
+            <label>
+              Kommune
+              <select value={selectedMunicipality} onChange={(event) => updateMunicipality(event.target.value)} required>
+                <option value="">Velg kommune</option>
+                {municipalities.map((municipality) => <option value={municipality} key={municipality}>{municipality}</option>)}
+              </select>
+            </label>
+            <label>
+              Søk
+              <input value={venueSearch} onChange={(event) => setVenueSearch(event.target.value)} placeholder="Søk anlegg" />
+            </label>
+          </div>
+          <label>
+            Anlegg
+            <select value={selectedVenueId} onChange={(event) => updateVenue(event.target.value)} required>
+              <option value="">Velg anlegg</option>
+              {filteredVenues.map((venue) => <option value={venue.id} key={venue.id}>{venue.name}</option>)}
+            </select>
+          </label>
+          {selectedMunicipality && filteredVenues.length === 0 && <p className="micro-copy">Ingen anlegg matcher søket i denne kommunen.</p>}
+          <div className="two-cols">
+            <label>
+              Type besøk
+              <select value={form.event_type} onChange={(event) => update('event_type', event.target.value)}>
+                <option>Kamp</option>
+                <option>Cup</option>
+                <option>Trening</option>
+                <option>Turnering</option>
+                <option>Annet</option>
+              </select>
+            </label>
+            <label>
+              Dato
+              <input type="date" value={form.visit_date} max={new Date().toISOString().slice(0, 10)} onChange={(event) => update('visit_date', event.target.value)} />
+            </label>
+          </div>
+        </section>
+
         <section className="form-card app-card form-card--dark">
           <span className="caps-label">Rumpe-o-meter</span>
           <div className="rumpe-meter">
@@ -1279,120 +1642,88 @@ function RateView({ venues, selectedVenue, form, setForm, onSubmit, onBack }) {
         </section>
 
         <section className="form-card app-card">
-          <SectionHeader title="Besøk" />
           <label>
-            Anlegg
-            <select value={form.venue_id || selectedVenue?.id || ''} onChange={(event) => update('venue_id', event.target.value)} required>
-              <option value="">Velg anlegg</option>
-              {venues.map((venue) => <option value={venue.id} key={venue.id}>{venue.name}</option>)}
+            Sitteplass
+            <select value={form.facility_seating_type} onChange={(event) => updateFacility('facility_seating_type', event.target.value)}>
+              <option>Trebenk</option>
+              <option>Plastseter</option>
+              <option>Betongtribune</option>
+              <option>Ståtribune</option>
+              <option>Ingen tribune</option>
+              <option>Ta med egen stol</option>
+              <option>Annet</option>
             </select>
           </label>
-          <div className="two-cols">
-            <label>
-              Type besøk
-              <select value={form.event_type} onChange={(event) => update('event_type', event.target.value)}>
-                <option>Kamp</option>
-                <option>Cup</option>
-                <option>Trening</option>
-                <option>Turnering</option>
-                <option>Annet</option>
-              </select>
-            </label>
-            <label>
-              Dato
-              <input type="date" value={form.visit_date} onChange={(event) => update('visit_date', event.target.value)} />
-            </label>
+          <div className="toggle-row">
+            <Toggle checked={form.facility_has_backrest} onChange={(checked) => updateFacility('facility_has_backrest', checked)} label="Ryggstøtte" />
+            <Toggle checked={form.facility_roof_cover} onChange={(checked) => updateFacility('facility_roof_cover', checked)} label={venueIsOutdoor ? 'Tak / ly' : 'Tak/overbygg'} />
           </div>
-        </section>
-
-        <section className="form-card app-card">
-          <SectionHeader title="Terningkast" />
           <div className="dice-grid">
-            {categories.map((category) => (
-              <DiceRating
-                key={category.key}
-                icon={category.icon}
-                label={category.label}
-                value={Number(form[category.key])}
-                onChange={(value) => update(category.key, value)}
+            {unifiedRatingFields.map((field) => (
+              <HumorRating
+                key={field.key}
+                icon={field.icon}
+                label={field.label}
+                scale={field.scale}
+                value={Number(form[field.key])}
+                onChange={(value) => updateUnified(field, value)}
               />
             ))}
           </div>
-        </section>
-
-        <section className="form-card app-card">
-          <SectionHeader title="Fasiliteter" />
-          <div className="two-cols">
-            <label>
-              Sitteplass
-              <select value={form.facility_seating_type} onChange={(event) => update('facility_seating_type', event.target.value)}>
-                <option>Trebenk</option>
-                <option>Plastseter</option>
-                <option>Betongtribune</option>
-                <option>Ståtribune</option>
-                <option>Ingen tribune</option>
-                <option>Annet</option>
-              </select>
-            </label>
-            <label>
-              Kiosk
-              <select value={form.facility_kiosk_status} onChange={(event) => update('facility_kiosk_status', event.target.value)}>
-                <option>Ukjent</option>
-                <option>Ingen kiosk</option>
-                <option>Ofte dugnadskiosk</option>
-                <option>Åpen ved kamper</option>
-                <option>Åpen ved cuper</option>
-              </select>
-            </label>
-          </div>
-          <div className="toggle-row">
-            <Toggle checked={form.facility_has_backrest} onChange={(checked) => update('facility_has_backrest', checked)} label="Ryggstøtte" />
-            <Toggle checked={form.facility_roof_cover} onChange={(checked) => update('facility_roof_cover', checked)} label="Tak/overbygg" />
-          </div>
-          <div className="category-sliders compact">
-            <FacilitySlider label="Sittekomfort" value={form.facility_seat_comfort} onChange={(value) => update('facility_seat_comfort', value)} />
-            <FacilitySlider label="Varme" value={form.facility_heating_level} onChange={(value) => update('facility_heating_level', value)} />
-            <FacilitySlider label="Toalett" value={form.facility_toilet_quality} onChange={(value) => update('facility_toilet_quality', value)} />
-            <FacilitySlider label="Tilgjengelighet" value={form.facility_accessibility} onChange={(value) => update('facility_accessibility', value)} />
-            <FacilitySlider label="Garderobe" value={form.facility_garderobe_quality} onChange={(value) => update('facility_garderobe_quality', value)} />
-            <FacilitySlider label="Dusj" value={form.facility_shower_quality} onChange={(value) => update('facility_shower_quality', value)} />
-            <FacilitySlider label="Sikt til banen" value={form.facility_view_quality} onChange={(value) => update('facility_view_quality', value)} />
-            <FacilitySlider label="Støynivå" value={form.facility_noise_level} onChange={(value) => update('facility_noise_level', value)} />
-          </div>
+          <ChoicePills label="Kiosk / kaffe" icon="☕" value={kioskLabel(form.facility_kiosk_status)} options={KIOSK_OPTIONS} onChange={(value) => updateFacility('facility_kiosk_status', value)} />
+          <ChoicePills label="Parkering" icon="🚗" value={parkingLabel(form.facility_parking)} options={PARKING_OPTIONS} onChange={(value) => updateFacility('facility_parking', value)} />
           <label>
-            Parkering
-            <input value={form.facility_parking} onChange={(event) => update('facility_parking', event.target.value)} placeholder="F.eks. god, trang, gateparkering" />
+            Navn eller kallenavn
+            <input value={form.user_name} onChange={(event) => update('user_name', event.target.value)} placeholder="F.eks. tribunekonge" maxLength="40" required />
           </label>
           <label>
-            Fasilitetsnotat
-            <textarea rows="3" value={form.facility_notes} onChange={(event) => update('facility_notes', event.target.value)} placeholder="Noe praktisk om tribune, toalett, kiosk, inngang, parkering eller vær?" />
+            Kommentar
+            <textarea rows="5" value={form.comment} onChange={(event) => update('comment', event.target.value)} placeholder="Hva bør andre vite før de setter seg her?" maxLength={MAX_COMMENT_LENGTH} />
           </label>
-        </section>
-
-        <section className="form-card app-card">
-          <SectionHeader title="Kommentar" />
-          <textarea rows="5" value={form.comment} onChange={(event) => update('comment', event.target.value)} placeholder="Hva bør andre vite før de setter seg her?" />
           <div className="quick-tags">
             {quickTags.map((tag) => <button type="button" key={tag} onClick={() => addTag(tag)}>{tag}</button>)}
           </div>
         </section>
 
         <div className="sticky-actions sticky-actions--single">
-          <button className="primary-action" type="submit">Send inn rapport 🍑</button>
+          <button className="primary-action" type="submit"><RumpeText>Send inn vurdering</RumpeText></button>
         </div>
       </form>
     </section>
   );
 }
 
-function DiceRating({ icon, label, value, onChange }) {
+function HumorRating({ icon, label, scale, value, onChange }) {
+  const numericValue = Math.max(1, Math.min(5, Number(value || 3)));
   return (
-    <div className="dice-rating">
-      <span>{icon} {label}</span>
-      <div>
-        {[1, 2, 3, 4, 5].map((number) => (
-          <button key={number} type="button" className={cx(number <= value && 'selected')} onClick={() => onChange(number)}>
-            {number}
+    <div className="humor-rating">
+      <span><span className="rating-label"><IconGlyph icon={icon} /> {label}</span><b>{ratingLabel(scale, numericValue)}</b></span>
+      <div className="humor-rating__options" role="group" aria-label={label}>
+        {ratingOptions(scale).map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={cx(option.value === numericValue && 'selected')}
+            onClick={() => onChange(option.value)}
+            title={`${option.value}: ${option.label}`}
+          >
+            <em>{option.emoji}</em>
+            <strong>{option.label}</strong>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChoicePills({ icon, label, value, options, onChange }) {
+  return (
+    <div className="choice-pills">
+      <span>{icon} {label}<b>{value}</b></span>
+      <div role="group" aria-label={label}>
+        {options.map((option) => (
+          <button key={option} type="button" className={cx(option === value && 'selected')} onClick={() => onChange(option)}>
+            {option}
           </button>
         ))}
       </div>
@@ -1410,23 +1741,23 @@ function Toggle({ checked, onChange, label }) {
   );
 }
 
-function FacilitySlider({ label, value, onChange }) {
-  return (
-    <label className="facility-slider">
-      <span>{label}<b>{value}/5</b></span>
-      <input type="range" min="1" max="5" value={value} onChange={(event) => onChange(event.target.value)} />
-    </label>
-  );
+function FacilitySlider({ label, value, onChange, scale = 'seating', icon = '•' }) {
+  return <HumorRating icon={icon} label={label} scale={scale} value={value} onChange={onChange} />;
 }
 
 function FormHeader({ title, step, onBack }) {
+  const hasText = Boolean(title || step);
   return (
     <div className="form-header">
       <button className="icon-button" type="button" onClick={onBack} aria-label="Tilbake"><Icon name="close" /></button>
-      <div>
-        <strong>{title}</strong>
-        <span>{step}</span>
-      </div>
+      {hasText ? (
+        <div>
+          <strong>{title}</strong>
+          <span>{step}</span>
+        </div>
+      ) : (
+        <div aria-hidden="true" />
+      )}
       <i aria-hidden="true" />
     </div>
   );
@@ -1437,13 +1768,15 @@ function FacilityReportView({ selectedVenue, form, setForm, onSubmit, onBack }) 
     setForm((current) => ({ ...current, [key]: value }));
   }
   const currentFacilities = selectedVenue?.facilities || {};
+  const venueIsOutdoor = Boolean(selectedVenue?.is_outdoor);
+  const facilityRatingFields = FACILITY_RATING_FIELDS[venueRatingKind(venueIsOutdoor)];
 
   return (
     <section className="screen detail-screen form-screen">
-      <FormHeader title="Rett info" step="Forslag til moderator" onBack={onBack} />
+      <FormHeader title="Rett info" step="Publiseres direkte" onBack={onBack} />
       <div className="alert-card alert-card--blue">
-        <strong>Informasjon sjekkes av moderator</strong>
-        <span>Du foreslår endringer. Offisiell hallinfo oppdateres først når forslaget godkjennes.</span>
+        <strong>Info oppdateres med en gang</strong>
+        <span>Moderator kan skjule eller rydde i etterkant hvis noe ikke stemmer.</span>
       </div>
 
       <form className="form-stack" onSubmit={onSubmit}>
@@ -1451,19 +1784,19 @@ function FacilityReportView({ selectedVenue, form, setForm, onSubmit, onBack }) 
           <div className="compare-card compare-card--old">
             <span>Offisiell info nå</span>
             <strong>{currentFacilities.seating_type || 'Ikke registrert'}</strong>
-            <p>Kiosk: {currentFacilities.kiosk_status || 'Ukjent'}</p>
-            <p>Tak: {yesNo(currentFacilities.roof_cover)}</p>
+            <p>Kiosk: {kioskLabel(currentFacilities.kiosk_status)}</p>
+            <p>Parkering: {parkingLabel(currentFacilities.parking)}</p>
           </div>
           <div className="compare-card compare-card--new">
             <span>Ditt forslag</span>
             <strong>{form.facility_seating_type || 'Ikke registrert'}</strong>
-            <p>Kiosk: {form.facility_kiosk_status || 'Ukjent'}</p>
-            <p>Tak: {yesNo(form.facility_roof_cover)}</p>
+            <p>Kiosk: {kioskLabel(form.facility_kiosk_status)}</p>
+            <p>Parkering: {parkingLabel(form.facility_parking)}</p>
           </div>
         </section>
 
         <section className="form-card app-card">
-          <SectionHeader title="Tribune og sitteplass" />
+          <SectionHeader title={venueIsOutdoor ? 'Tribune og sidelinje' : 'Tribune og sitteplass'} />
           <label>
             Sitteplass
             <select value={form.facility_seating_type} onChange={(event) => update('facility_seating_type', event.target.value)}>
@@ -1472,53 +1805,40 @@ function FacilityReportView({ selectedVenue, form, setForm, onSubmit, onBack }) 
               <option>Betongtribune</option>
               <option>Ståtribune</option>
               <option>Ingen tribune</option>
+              <option>Ta med egen stol</option>
               <option>Annet</option>
             </select>
           </label>
           <div className="toggle-row">
             <Toggle checked={form.facility_has_backrest} onChange={(checked) => update('facility_has_backrest', checked)} label="Ryggstøtte" />
-            <Toggle checked={form.facility_roof_cover} onChange={(checked) => update('facility_roof_cover', checked)} label="Tak/overbygg" />
+            <Toggle checked={form.facility_roof_cover} onChange={(checked) => update('facility_roof_cover', checked)} label={venueIsOutdoor ? 'Tak / ly' : 'Tak/overbygg'} />
           </div>
           <div className="category-sliders compact">
-            <FacilitySlider label="Sittekomfort" value={form.facility_seat_comfort} onChange={(value) => update('facility_seat_comfort', value)} />
-            <FacilitySlider label="Varme" value={form.facility_heating_level} onChange={(value) => update('facility_heating_level', value)} />
-            <FacilitySlider label="Sikt til banen" value={form.facility_view_quality} onChange={(value) => update('facility_view_quality', value)} />
-            <FacilitySlider label="Støynivå" value={form.facility_noise_level} onChange={(value) => update('facility_noise_level', value)} />
+            {facilityRatingFields.map((field) => (
+              <HumorRating
+                key={field.key}
+                icon={field.icon}
+                label={field.label}
+                scale={field.scale}
+                value={Number(form[field.key])}
+                onChange={(value) => update(field.key, value)}
+              />
+            ))}
           </div>
         </section>
 
         <section className="form-card app-card">
-          <SectionHeader title="Praktisk" />
-          <div className="two-cols">
-            <label>
-              Kiosk
-              <select value={form.facility_kiosk_status} onChange={(event) => update('facility_kiosk_status', event.target.value)}>
-                <option>Ukjent</option>
-                <option>Ingen kiosk</option>
-                <option>Ofte dugnadskiosk</option>
-                <option>Åpen ved kamper</option>
-                <option>Åpen ved cuper</option>
-              </select>
-            </label>
-            <label>
-              Parkering
-              <input value={form.facility_parking} onChange={(event) => update('facility_parking', event.target.value)} placeholder="F.eks. god, trang, gateparkering" />
-            </label>
-          </div>
-          <div className="category-sliders compact">
-            <FacilitySlider label="Toalett" value={form.facility_toilet_quality} onChange={(value) => update('facility_toilet_quality', value)} />
-            <FacilitySlider label="Tilgjengelighet" value={form.facility_accessibility} onChange={(value) => update('facility_accessibility', value)} />
-            <FacilitySlider label="Garderobe" value={form.facility_garderobe_quality} onChange={(value) => update('facility_garderobe_quality', value)} />
-            <FacilitySlider label="Dusj" value={form.facility_shower_quality} onChange={(value) => update('facility_shower_quality', value)} />
-          </div>
+          <SectionHeader title="Kiosk, do og parkering" />
+          <ChoicePills label="Kiosk / kaffe" icon="☕" value={kioskLabel(form.facility_kiosk_status)} options={KIOSK_OPTIONS} onChange={(value) => update('facility_kiosk_status', value)} />
+          <ChoicePills label="Parkering" icon="🚗" value={parkingLabel(form.facility_parking)} options={PARKING_OPTIONS} onChange={(value) => update('facility_parking', value)} />
           <label>
             Begrunnelse
-            <textarea rows="5" value={form.facility_notes} onChange={(event) => update('facility_notes', event.target.value)} placeholder="Hva er feil eller mangler? Skriv konkret, så moderator kan godkjenne raskt." />
+            <textarea rows="5" value={form.facility_notes} onChange={(event) => update('facility_notes', event.target.value)} placeholder="Hva er feil eller mangler? Skriv konkret." maxLength={MAX_NOTES_LENGTH} />
           </label>
         </section>
 
         <div className="sticky-actions sticky-actions--single">
-          <button className="primary-action" type="submit">Send forslag til moderator</button>
+          <button className="primary-action" type="submit">Publiser info</button>
         </div>
       </form>
     </section>
@@ -1532,7 +1852,7 @@ function ThanksView({ venue, onHome, onVenue }) {
         <img className="thanks-icon" src={GLAD_RUMPE_ICON_SRC} alt="" aria-hidden="true" />
         <span className="tag tag--green">🏅 +10 sliter-poeng</span>
         <h1>Numsen din er logget!</h1>
-        <p>{venue ? `Bidraget ditt ligger til moderering for ${venue.name}.` : 'Bidraget ditt ligger til moderering.'}</p>
+        <p>{venue ? `Vurderingen din er publisert for ${venue.name}.` : 'Vurderingen din er publisert.'}</p>
         <button className="primary-action" type="button" onClick={onVenue}>Se anlegget</button>
         <button className="secondary-action" type="button" onClick={onHome}>Til forsiden</button>
       </div>
@@ -1540,7 +1860,36 @@ function ThanksView({ venue, onHome, onVenue }) {
   );
 }
 
-function ProfileView({ user, profile, mode, canModerate, notice, authBusy, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissNotice, onDismissInstall }) {
+function BadgePanel({ progress }) {
+  return (
+    <section className="badges-card app-card">
+      <div className="section-title section-title--inside">
+        <h2>Badges</h2>
+        <span>{Number(progress?.checkIns || 0)} sjekk-ins</span>
+      </div>
+      <div className="badge-grid">
+        {BADGE_DEFINITIONS.map((badge) => {
+          const value = badgeValue(progress, badge);
+          const unlocked = value >= badge.target;
+          const percent = Math.min(100, Math.round((value / badge.target) * 100));
+          return (
+            <article className={cx('badge-card', unlocked && 'badge-card--unlocked')} key={badge.id}>
+              <div className="badge-card__icon"><IconGlyph icon={badge.icon} /></div>
+              <div>
+                <strong>{badge.title}</strong>
+                <p>{badge.description}</p>
+                <span>{Math.min(value, badge.target)} / {badge.target}</span>
+                <i style={{ '--badge-progress': `${percent}%` }} />
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ProfileView({ user, profile, mode, canModerate, badgeProgress, notice, authBusy, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissNotice, onDismissInstall }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState('login');
@@ -1550,8 +1899,8 @@ function ProfileView({ user, profile, mode, canModerate, notice, authBusy, onLog
     <section className="screen">
       <div className="profile-card app-card">
         <p className="eyebrow">Min profil</p>
-        <h1>{user ? 'Du er klar til å bidra' : 'Logg inn for å bidra'}</h1>
-        <p>Alle kan lese. Innlogging kreves for vurderinger og nye anlegg, slik at innhold kan modereres.</p>
+        <h1>{user ? 'Du er logget inn' : 'Frivillig profil'}</h1>
+        <p>Du kan sende vurderinger uten konto. Badges teller på denne enheten, og innlogging kan senere brukes til å gjøre krav på bidragene dine.</p>
         <div className="mode-card">
           <strong>{mode === 'demo' ? 'Demo uten backend' : 'Supabase aktiv'}</strong>
           <span>{mode === 'demo' ? 'Vurderinger lagres bare på denne enheten.' : 'Vurderinger lagres i felles database.'}</span>
@@ -1563,6 +1912,8 @@ function ProfileView({ user, profile, mode, canModerate, notice, authBusy, onLog
           </div>
         )}
       </div>
+
+      <BadgePanel progress={badgeProgress} />
 
       {!installHintDismissed && (
         <div className="install-card app-card">
@@ -1585,7 +1936,7 @@ function ProfileView({ user, profile, mode, canModerate, notice, authBusy, onLog
           {canModerate ? (
             <button className="primary-action" type="button" onClick={onAdmin}>Åpne moderering</button>
           ) : (
-            <p className="muted">Denne brukeren kan bidra, men har ikke moderatorrolle.</p>
+            <p className="muted">Denne brukeren har ikke moderatorrolle ennå.</p>
           )}
         </div>
       ) : (
@@ -1624,7 +1975,7 @@ function NewVenueView({ form, setForm, onSubmit, onBack }) {
     <section className="screen detail-screen form-screen">
       <FormHeader title="Foreslå anlegg" step="Nytt sted" onBack={onBack} />
       <form className="form-card app-card" onSubmit={onSubmit}>
-        <p className="eyebrow">Mangler hallen?</p>
+        <p className="eyebrow">Mangler anlegget?</p>
         <h1>Legg den i køen</h1>
         <p>Forslaget kan godkjennes av moderator før det vises offentlig.</p>
         <label>
@@ -1654,7 +2005,7 @@ function NewVenueView({ form, setForm, onSubmit, onBack }) {
         </div>
         <label>
           Notat
-          <textarea rows="4" value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Tribune, kiosk, parkering, vær, annet…" />
+          <textarea rows="4" value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Tribune, kiosk, parkering, vær, annet…" maxLength={MAX_NOTES_LENGTH} />
         </label>
         <button className="primary-action" type="submit">Send forslag</button>
       </form>
@@ -1667,16 +2018,13 @@ function AdminView({
   busy,
   onBack,
   onRefresh,
-  onApproveReview,
-  onRejectReview,
   onHideReview,
-  onApproveFacility,
   onRejectFacility,
   onApproveVenue,
   onRejectVenue,
 }) {
   const [venueDrafts, setVenueDrafts] = useState({});
-  const pendingCount = moderation.reviews.length + (moderation.facilityReports?.length || 0) + moderation.venueRequests.length;
+  const pendingCount = moderation.venueRequests.length;
 
   useEffect(() => {
     const nextDrafts = {};
@@ -1695,41 +2043,28 @@ function AdminView({
 
   return (
     <section className="screen detail-screen admin-screen">
-      <FormHeader title="Moderator" step="Rydd før publisering" onBack={onBack} />
+      <FormHeader title="Moderator" step="Ettersjekk" onBack={onBack} />
       <div className="admin-hero app-card">
         <span className="eyebrow">Moderator</span>
-        <h1>Hold hallkulturen ryddig.</h1>
-        <p>Godkjenn ekte bidrag, avvis tull og redd andre foreldre fra dårlige benker.</p>
+        <h1>Hold tribunekulturen ryddig.</h1>
+        <p>Skjul upassende vurderinger, godkjenn anleggsforslag og rett praktisk info når du tar ukesrydden.</p>
         <button className="secondary-action" type="button" onClick={onRefresh}>Oppdater kø</button>
       </div>
 
       <div className="stat-row">
         <span className="stat-pill stat-pill--amber">Venter {pendingCount}</span>
-        <span className="stat-pill stat-pill--green">Godkjent {moderation.approvedReviews.length}</span>
+        <span className="stat-pill stat-pill--green">Synlige vurderinger {moderation.approvedReviews.length}</span>
         <span className="stat-pill stat-pill--red">Skjul ved behov</span>
       </div>
 
       <section className="panel app-card">
-        <SectionHeader title={`Ventende vurderinger · ${moderation.reviews.length}`} />
-        {moderation.reviews.length === 0 ? (
-          <p className="muted">Ingen ventende vurderinger.</p>
-        ) : (
-          <div className="review-list">
-            {moderation.reviews.map((review) => (
-              <ModerationReviewCard key={review.id} review={review} busy={busy} onApprove={() => onApproveReview(review.id)} onReject={() => onRejectReview(review.id)} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="panel app-card">
-        <SectionHeader title={`Fasilitetsrapporter · ${moderation.facilityReports?.length || 0}`} />
+        <SectionHeader title={`Synlig anleggsinfo · ${moderation.facilityReports?.length || 0}`} />
         {!moderation.facilityReports?.length ? (
-          <p className="muted">Ingen ventende fasilitetsrapporter.</p>
+          <p className="muted">Ingen synlig fasilitetsinfo å sjekke.</p>
         ) : (
           <div className="review-list">
             {moderation.facilityReports.map((report) => (
-              <ModerationFacilityCard key={report.id} report={report} busy={busy} onApprove={() => onApproveFacility(report.id)} onReject={() => onRejectFacility(report.id)} />
+              <ModerationFacilityCard key={report.id} report={report} busy={busy} onReject={() => onRejectFacility(report.id)} />
             ))}
           </div>
         )}
@@ -1777,38 +2112,46 @@ function AdminView({
   );
 }
 
-function ModerationFacilityCard({ report, busy, onApprove, onReject }) {
-  const rows = [
-    ['Sitteplass', report.seating_type || 'Ukjent'],
-    ['Ryggstøtte', yesNo(report.has_backrest)],
-    ['Tak', yesNo(report.roof_cover)],
-    ['Sittekomfort', report.seat_comfort],
-    ['Varme', report.heating_level],
-    ['Toalett', report.toilet_quality],
-    ['Tilgjengelighet', report.accessibility],
-    ['Garderobe', report.garderobe_quality],
-    ['Dusj', report.shower_quality],
-    ['Sikt', report.view_quality],
-    ['Støy', report.noise_level],
-  ];
+function ModerationFacilityCard({ report, busy, onReject }) {
+  const venueIsOutdoor = Boolean(report.venues?.is_outdoor);
+  const rows = FACILITY_DISPLAY_ROWS[venueRatingKind(venueIsOutdoor)].map((row) => [
+    row.label,
+    row.value({
+      seating_type: report.seating_type,
+      has_backrest: report.has_backrest,
+      roof_cover: report.roof_cover,
+      seat_comfort: report.seat_comfort,
+      heating_level: report.heating_level,
+      toilet_quality: report.toilet_quality,
+      garderobe_quality: report.garderobe_quality,
+      shower_quality: report.shower_quality,
+      kiosk_status: report.kiosk_status,
+      parking: report.parking,
+      accessibility: report.accessibility,
+      view_quality: report.view_quality,
+      noise_level: report.noise_level,
+    }),
+  ]);
   return (
     <article className="mod-card mod-card--green">
       <div className="mod-card__top"><span className="tag tag--green">Fasilitetsrapport</span><small>{shortDate(report.created_at)}</small></div>
       <h3>{report.venue_name || report.venues?.name || 'Ukjent anlegg'}</h3>
       <p>{report.notes || 'Ingen notat.'}</p>
       <div className="score-row score-row--wrap">{rows.map(([label, value]) => <span key={label}>{label}: {value ?? '–'}</span>)}</div>
-      <div className="mini-actions"><button type="button" disabled={Boolean(busy)} onClick={onApprove}>{busy === `approve-facility-${report.id}` ? 'Godkjenner…' : 'Godkjenn info'}</button><button type="button" disabled={Boolean(busy)} onClick={onReject}>Avvis</button></div>
+      <div className="mini-actions"><button type="button" disabled={Boolean(busy)} onClick={onReject}>{busy === `reject-facility-${report.id}` ? 'Skjuler…' : 'Skjul info'}</button></div>
     </article>
   );
 }
 
 function ModerationReviewCard({ review, visible = false, busy, onApprove, onReject, onHide }) {
+  const venueIsOutdoor = Boolean(review.venues?.is_outdoor);
+  const reviewRows = REVIEW_CATEGORIES[venueRatingKind(venueIsOutdoor)].map((category) => `${category.label}: ${ratingLabel(category.scale, review[category.key])}`);
   return (
     <article className={cx('mod-card', visible ? 'mod-card--green' : 'mod-card--amber')}>
       <div className="mod-card__top"><span className="tag tag--amber">Vurdering</span><small>{review.tribunesliter_minutes} min</small></div>
       <h3>{review.venue_name || review.venues?.name || 'Ukjent anlegg'}</h3>
       <p>{review.comment || 'Ingen kommentar.'}</p>
-      <div className="score-row"><span>Sittekomfort {review.comfort_score}</span><span>Sikt {review.view_score}</span><span>Temp {review.temperature_score}</span><span>Tilgang {review.accessibility_score}</span></div>
+      <div className="score-row score-row--wrap">{reviewRows.map((row) => <span key={row}>{row}</span>)}</div>
       <small>{review.event_type} · {shortDate(review.visit_date)}</small>
       <div className="mini-actions">
         {visible ? <button type="button" disabled={Boolean(busy)} onClick={onHide}>{busy === `hide-review-${review.id}` ? 'Skjuler…' : 'Skjul'}</button> : <><button type="button" disabled={Boolean(busy)} onClick={onApprove}>{busy === `approve-review-${review.id}` ? 'Godkjenner…' : 'Godkjenn'}</button><button type="button" disabled={Boolean(busy)} onClick={onReject}>Avvis</button></>}

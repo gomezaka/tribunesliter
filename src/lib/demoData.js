@@ -22,8 +22,6 @@ export const demoVenues = [
       parking: 'Begrenset, men brukbar',
       accessibility: 3,
       roof_cover: true,
-      garderobe_quality: 3,
-      shower_quality: 3,
       view_quality: 4,
       noise_level: 4,
       notes: 'Bråkete hall når tribunen er full, men god sikt fra midtfeltet.'
@@ -53,8 +51,6 @@ export const demoVenues = [
       parking: 'God',
       accessibility: 2,
       roof_cover: false,
-      garderobe_quality: 2,
-      shower_quality: 2,
       view_quality: 3,
       noise_level: 2,
       notes: 'Ta med stol hvis du ikke vil stå. Værutsatt på åpne dager.'
@@ -84,8 +80,6 @@ export const demoVenues = [
       parking: 'Middels',
       accessibility: 4,
       roof_cover: true,
-      garderobe_quality: 4,
-      shower_quality: 3,
       view_quality: 4,
       noise_level: 3,
       notes: 'Fin hall for lengre arrangementer. Noe kø i gangen mellom kampene.'
@@ -115,8 +109,6 @@ export const demoVenues = [
       parking: 'God',
       accessibility: 3,
       roof_cover: false,
-      garderobe_quality: 3,
-      shower_quality: 3,
       view_quality: 4,
       noise_level: 2,
       notes: 'Bra sikt, men ta alltid med ekstra lag.'

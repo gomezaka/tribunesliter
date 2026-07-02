@@ -6,8 +6,11 @@ const LOCAL_REVIEW_KEY = 'tribunesliter.localReviews.v2';
 const LOCAL_VENUE_KEY = 'tribunesliter.localVenueRequests.v2';
 const LOCAL_FACILITY_KEY = 'tribunesliter.localFacilityReports.v2';
 const LOCAL_HIDDEN_REVIEW_KEY = 'tribunesliter.hiddenReviews.v2';
+const ANONYMOUS_DEVICE_ID_KEY = 'tribunesliter.anonymousDeviceId.v1';
 const USERNAME_EMAIL_DOMAIN = 'tribunesliter.local';
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,24}$/;
+const MAX_COMMENT_LENGTH = 500;
+const MAX_NOTES_LENGTH = 500;
 
 function readLocal(key, fallback = []) {
   try {
@@ -19,6 +22,20 @@ function readLocal(key, fallback = []) {
 
 function writeLocal(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function createDeviceId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function getAnonymousDeviceId() {
+  if (typeof localStorage === 'undefined') return null;
+  const existing = localStorage.getItem(ANONYMOUS_DEVICE_ID_KEY);
+  if (existing) return existing;
+  const next = createDeviceId();
+  localStorage.setItem(ANONYMOUS_DEVICE_ID_KEY, next);
+  return next;
 }
 
 function normalizeVenue(row) {
@@ -46,6 +63,31 @@ function normalizeFacilityReport(row) {
     venue_name: row.venue_name ?? row.venues?.name ?? row.venue?.name ?? '',
     user_name: row.user_name ?? row.profiles?.display_name ?? 'Innlogget bruker',
   };
+}
+
+function cleanUserName(value) {
+  return String(value || '').trim().slice(0, 40);
+}
+
+function cleanLimitedText(value, maxLength) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function cleanVisitDate(value) {
+  const date = String(value || todayIsoDate()).slice(0, 10);
+  if (date > todayIsoDate()) throw new Error('Besøksdato kan ikke være i fremtiden.');
+  return date;
+}
+
+function throwSubmitError(error) {
+  if (error?.code === '23505') {
+    throw new Error('Denne enheten har allerede sjekket inn dette anlegget på valgt dato.');
+  }
+  throw error;
 }
 
 function hasModeratorRole(profile) {
@@ -227,6 +269,13 @@ export function getDemoUser() {
   return readLocal('tribunesliter.demoUser', null);
 }
 
+async function getOptionalAuthenticatedUser() {
+  if (!hasSupabaseConfig) return null;
+  const { data, error } = await supabase.auth.getUser();
+  if (error && !/session/i.test(error.message || '')) throw error;
+  return data?.user || null;
+}
+
 export async function fetchVenues() {
   if (!hasSupabaseConfig) {
     const localReviews = readLocal(LOCAL_REVIEW_KEY, []);
@@ -288,79 +337,96 @@ export async function fetchReviews(venueId) {
   return data.map(normalizeReview);
 }
 
-function buildFacilityPayload(review, userId) {
+function buildFacilityPayload(review, userId, options = {}) {
+  const publish = Boolean(options.publish);
   return {
     venue_id: review.venue_id,
-    user_id: userId,
+    user_id: userId || null,
+    anonymous_device_id: getAnonymousDeviceId(),
+    user_name: cleanUserName(review.user_name) || null,
     seating_type: review.facility_seating_type || review.seating_type || null,
     seat_comfort: Number(review.facility_seat_comfort || review.seat_comfort || review.comfort_score || 3),
     has_backrest: Boolean(review.facility_has_backrest ?? review.has_backrest),
     heating_level: Number(review.facility_heating_level || review.heating_level || review.temperature_score || 3),
     toilet_quality: Number(review.facility_toilet_quality || review.toilet_quality || 3),
+    garderobe_quality: Number(review.facility_garderobe_quality || review.garderobe_quality || 3),
+    shower_quality: Number(review.facility_shower_quality || review.shower_quality || 3),
     kiosk_status: review.facility_kiosk_status || review.kiosk_status || null,
     parking: review.facility_parking || review.parking || null,
     accessibility: Number(review.facility_accessibility || review.accessibility || review.accessibility_score || 3),
     roof_cover: Boolean(review.facility_roof_cover ?? review.roof_cover),
-    garderobe_quality: Number(review.facility_garderobe_quality || review.garderobe_quality || 3),
-    shower_quality: Number(review.facility_shower_quality || review.shower_quality || 3),
     view_quality: Number(review.facility_view_quality || review.view_quality || review.view_score || 3),
     noise_level: Number(review.facility_noise_level || review.noise_level || 3),
-    notes: review.facility_notes || review.notes || null,
-    approved: false,
-    status: 'pending',
+    notes: cleanLimitedText(review.facility_notes || review.notes, MAX_NOTES_LENGTH) || null,
+    approved: publish,
+    status: publish ? 'approved' : 'pending',
   };
 }
 
 function hasFacilityReport(review) {
-  return Boolean(
-    review.facility_seating_type ||
-    review.facility_kiosk_status ||
-    review.facility_parking ||
-    review.facility_notes ||
-    review.facility_has_backrest ||
-    review.facility_roof_cover
-  );
+  return Boolean(review.include_facilities);
 }
 
 export async function submitReview(review) {
+  const userName = cleanUserName(review.user_name);
+  if (!userName) throw new Error('Skriv inn navn eller kallenavn før du sender vurderingen.');
+  const comment = cleanLimitedText(review.comment, MAX_COMMENT_LENGTH);
+  const anonymousDeviceId = getAnonymousDeviceId();
+  const visitDate = cleanVisitDate(review.visit_date);
+
   if (!hasSupabaseConfig) {
+    const demoUser = getDemoUser();
     const reviews = readLocal(LOCAL_REVIEW_KEY, []);
     const newReview = {
       ...review,
       id: crypto.randomUUID(),
-      user_name: review.user_name || 'Demo-bruker',
-      approved: false,
-      status: 'pending',
+      user_id: demoUser?.id || null,
+      anonymous_device_id: anonymousDeviceId,
+      user_name: userName,
+      visit_date: visitDate,
+      comment,
+      approved: true,
+      status: 'approved',
       created_at: new Date().toISOString(),
     };
     writeLocal(LOCAL_REVIEW_KEY, [newReview, ...reviews]);
+    if (hasFacilityReport(review)) {
+      const reports = readLocal(LOCAL_FACILITY_KEY, []);
+      const facilityPayload = {
+        ...buildFacilityPayload(review, demoUser?.id || null, { publish: true }),
+        id: crypto.randomUUID(),
+        venue_name: review.venue_name || '',
+        created_at: new Date().toISOString(),
+      };
+      writeLocal(LOCAL_FACILITY_KEY, [facilityPayload, ...reports]);
+    }
     return newReview;
   }
 
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError) throw authError;
-  if (!authData.user) throw new Error('Du må være innlogget for å sende vurdering.');
+  const authUser = await getOptionalAuthenticatedUser();
 
   const payload = {
     venue_id: review.venue_id,
-    user_id: authData.user.id,
+    user_id: authUser?.id || null,
+    anonymous_device_id: anonymousDeviceId,
+    user_name: userName,
     tribunesliter_minutes: Number(review.tribunesliter_minutes),
     comfort_score: Number(review.comfort_score),
     view_score: Number(review.view_score),
     temperature_score: Number(review.temperature_score),
     accessibility_score: Number(review.accessibility_score),
     event_type: review.event_type,
-    visit_date: review.visit_date,
-    comment: review.comment,
-    approved: false,
-    status: 'pending',
+    visit_date: visitDate,
+    comment,
+    approved: true,
+    status: 'approved',
   };
 
   const { data, error } = await supabase.from('reviews').insert(payload).select('*').single();
-  if (error) throw error;
+  if (error) throwSubmitError(error);
 
   if (hasFacilityReport(review)) {
-    const facilityPayload = buildFacilityPayload(review, authData.user.id);
+    const facilityPayload = buildFacilityPayload(review, authUser?.id || null, { publish: true });
     const { error: facilityError } = await supabase.from('facility_reports').insert(facilityPayload);
     if (facilityError) throw facilityError;
   }
@@ -369,24 +435,23 @@ export async function submitReview(review) {
 }
 
 export async function submitFacilityReport(report) {
+  const authUser = await getOptionalAuthenticatedUser();
+  const userName = cleanUserName(report.user_name) || 'Anonym sliter';
+
   if (!hasSupabaseConfig) {
     const reports = readLocal(LOCAL_FACILITY_KEY, []);
     const payload = {
-      ...buildFacilityPayload(report, 'demo-user'),
+      ...buildFacilityPayload({ ...report, user_name: userName }, getDemoUser()?.id || null, { publish: true }),
       id: crypto.randomUUID(),
       venue_name: report.venue_name || '',
-      user_name: 'Demo-bruker',
+      user_name: userName,
       created_at: new Date().toISOString(),
     };
     writeLocal(LOCAL_FACILITY_KEY, [payload, ...reports]);
     return payload;
   }
 
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError) throw authError;
-  if (!authData.user) throw new Error('Du må være innlogget for å sende fasilitetsrapport.');
-
-  const payload = buildFacilityPayload(report, authData.user.id);
+  const payload = buildFacilityPayload({ ...report, user_name: userName }, authUser?.id || null, { publish: true });
   const { data, error } = await supabase.from('facility_reports').insert(payload).select('*').single();
   if (error) throw error;
   return data;
@@ -419,9 +484,9 @@ export async function fetchPendingModeration() {
     const localReviews = readLocal(LOCAL_REVIEW_KEY, []);
     const localFacilities = readLocal(LOCAL_FACILITY_KEY, []);
     return {
-      reviews: localReviews.filter((review) => review.status === 'pending' || review.approved === false),
+      reviews: [],
       approvedReviews: [...demoReviews, ...localReviews].filter((review) => !review.status || review.status === 'approved' || review.approved === true),
-      facilityReports: localFacilities.filter((report) => report.status === 'pending' || report.approved === false),
+      facilityReports: localFacilities.filter((report) => report.status === 'approved' || report.approved === true),
       venueRequests: readLocal(LOCAL_VENUE_KEY, []).filter((request) => request.status === 'pending'),
     };
   }
@@ -429,19 +494,17 @@ export async function fetchPendingModeration() {
   const profile = await getCurrentProfile();
   if (!hasModeratorRole(profile)) throw new Error('Denne brukeren mangler moderator- eller adminrolle.');
 
-  const [reviews, approvedReviews, facilityReports, venueRequests] = await Promise.all([
-    supabase.from('reviews').select('*, venues(name)').eq('status', 'pending').order('created_at', { ascending: false }).limit(50),
-    supabase.from('reviews').select('*, venues(name)').eq('status', 'approved').order('created_at', { ascending: false }).limit(50),
-    supabase.from('facility_reports').select('*, venues(name)').eq('status', 'pending').order('created_at', { ascending: false }).limit(50),
+  const [approvedReviews, facilityReports, venueRequests] = await Promise.all([
+    supabase.from('reviews').select('*, venues(name, is_outdoor)').eq('status', 'approved').order('created_at', { ascending: false }).limit(50),
+    supabase.from('facility_reports').select('*, venues(name, is_outdoor)').eq('status', 'approved').order('created_at', { ascending: false }).limit(50),
     supabase.from('venue_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(50),
   ]);
 
-  if (reviews.error) throw reviews.error;
   if (approvedReviews.error) throw approvedReviews.error;
   if (facilityReports.error) throw facilityReports.error;
   if (venueRequests.error) throw venueRequests.error;
   return {
-    reviews: reviews.data.map(normalizeReview),
+    reviews: [],
     approvedReviews: approvedReviews.data.map(normalizeReview),
     facilityReports: facilityReports.data.map(normalizeFacilityReport),
     venueRequests: venueRequests.data,

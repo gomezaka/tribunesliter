@@ -17,8 +17,9 @@ npm run build
    - hallprofil
    - opprett bruker med brukernavn/passord
    - innlogging med brukernavn/passord
-   - vurdering til moderering
-   - rett-info til moderering
+   - vurdering publiseres direkte
+   - skjul synlig vurdering i moderatorpanelet
+   - rett-info publiseres direkte
    - lagre/fjerne hall
    - del-knapp
    - admin/moderering
@@ -76,7 +77,7 @@ VITE_SUPABASE_ANON_KEY=...
 1. Åpne produksjonslenken på mobil.
 2. Opprett/logg inn med brukernavn og passord.
 3. Send inn testvurdering.
-4. Godkjenn i moderatorpanelet.
-5. Sjekk at vurderingen vises for andre enheter.
+4. Sjekk at vurderingen vises for andre enheter.
+5. Skjul testvurderingen i moderatorpanelet.
 6. Legg appen til på hjemskjermen.
 7. Test at appikon og fullskjerm fungerer.

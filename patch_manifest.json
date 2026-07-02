@@ -1,0 +1,15 @@
+{
+  "name": "Tribunesliter unified vurdering patch",
+  "version": "0.2.12",
+  "description": "Samler praktisk info og rating i én Vurdering, fjerner duplisering og fjerner garderobe/dusj fra app og schema.",
+  "files": [
+    "src/App.jsx",
+    "src/styles.css",
+    "src/lib/api.js",
+    "src/lib/demoData.js",
+    "docs/supabase-schema.sql",
+    "package.json",
+    "package-lock.json",
+    "dist/**"
+  ]
+}
