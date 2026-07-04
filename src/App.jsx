@@ -3,6 +3,7 @@ import {
   archiveVenue,
   approveVenueRequest,
   createVenue,
+  fetchBadgeContributions,
   fetchPendingModeration,
   fetchReviews,
   fetchVenues,
@@ -536,6 +537,69 @@ function mergeBadgeProgress(current, patch = {}) {
   return next;
 }
 
+function mergeBadgeProgressMax(current, incoming = {}) {
+  const next = sanitizeBadgeProgress(current);
+  const safeIncoming = sanitizeBadgeProgress(incoming);
+  Object.entries(safeIncoming).forEach(([key, value]) => {
+    if (key === 'uniqueVenueIds') {
+      next.uniqueVenueIds = [...new Set([...next.uniqueVenueIds, ...value.filter(Boolean)])];
+      return;
+    }
+    if (key === 'municipalityVenueIds') {
+      Object.entries(value || {}).forEach(([municipality, ids]) => {
+        next.municipalityVenueIds[municipality] = [...new Set([...(next.municipalityVenueIds[municipality] || []), ...(ids || []).filter(Boolean)])];
+      });
+      return;
+    }
+    if (key === 'municipalityCounts') {
+      Object.entries(value || {}).forEach(([municipality, count]) => {
+        next.municipalityCounts[municipality] = Math.max(Number(next.municipalityCounts[municipality] || 0), Number(count || 0));
+      });
+      return;
+    }
+    next[key] = Math.max(Number(next[key] || 0), Number(value || 0));
+  });
+  return next;
+}
+
+function venueForContribution(row) {
+  return {
+    id: row?.venue_id || row?.venues?.id || '',
+    municipality: row?.venues?.municipality || row?.venue_municipality || '',
+    is_outdoor: Boolean(row?.venues?.is_outdoor),
+    review_count: Number(row?.venues?.review_count ?? 2),
+  };
+}
+
+function facilityReportForBadges(report) {
+  return {
+    ...report,
+    facility_seating_type: report?.seating_type,
+    facility_seat_comfort: report?.seat_comfort,
+    facility_view_quality: report?.view_quality,
+    facility_heating_level: report?.heating_level,
+    facility_toilet_quality: report?.toilet_quality,
+    facility_kiosk_status: report?.kiosk_status,
+    facility_parking: report?.parking,
+    facility_accessibility: report?.accessibility,
+    facility_notes: report?.notes,
+  };
+}
+
+function buildBadgeProgressFromContributions(contributions = {}) {
+  let next = sanitizeBadgeProgress();
+  for (const review of contributions.reviews || []) {
+    next = mergeBadgeProgress(next, buildReviewBadgeProgressPatch(review, venueForContribution(review)));
+  }
+  for (const report of contributions.facilityReports || []) {
+    next = mergeBadgeProgress(next, buildFacilityBadgeProgressPatch(facilityReportForBadges(report), venueForContribution(report)));
+  }
+  if (contributions.venueRequests?.length) {
+    next = mergeBadgeProgress(next, { venueRequests: contributions.venueRequests.length });
+  }
+  return next;
+}
+
 function textMatches(value, pattern) {
   return pattern.test(String(value || '').toLowerCase());
 }
@@ -587,6 +651,7 @@ function buildReviewBadgeProgressPatch(form, venue) {
   const venueId = form?.venue_id || venue?.id || '';
   const municipality = venue?.municipality || form?.venue_municipality || '';
   const includeFacilities = Boolean(form?.include_facilities);
+  const reviewDate = form?.created_at ? new Date(form.created_at) : new Date();
   const patch = {
     checkIns: 1,
     seatingReports: 1,
@@ -598,7 +663,7 @@ function buildReviewBadgeProgressPatch(form, venue) {
     badSeatReviews: isBadSeating(form) ? 1 : 0,
     badViewReviews: isBadView(form) ? 1 : 0,
     weatherWarriorReviews: isWeatherWarrior(form, venueIsOutdoor) ? 1 : 0,
-    lateReviews: new Date().getHours() >= 20 ? 1 : 0,
+    lateReviews: reviewDate.getHours() >= 20 ? 1 : 0,
     firstReviews: Number(venue?.review_count || 0) === 0 ? 1 : 0,
     allBadReviews: isAllBadReview(form) ? 1 : 0,
     perfectSmallVenueReviews: isPerfectReview(form) && Number(venue?.review_count || 0) <= 1 ? 1 : 0,
@@ -869,6 +934,22 @@ export default function App() {
       .then(setReviews)
       .catch((error) => setNotice(errorMessage(error)));
   }, [selectedVenue?.id]);
+
+  useEffect(() => {
+    if (loading) return;
+    let mounted = true;
+    withTimeout(fetchBadgeContributions(), 'Klarte ikke oppdatere badges akkurat nå.')
+      .then((contributions) => {
+        if (!mounted) return;
+        setBadgeProgress((current) => mergeBadgeProgressMax(current, buildBadgeProgressFromContributions(contributions)));
+      })
+      .catch((error) => {
+        if (mounted) setNotice(errorMessage(error, 'Klarte ikke oppdatere badges akkurat nå.'));
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [loading, user?.id]);
 
   function go(nextView, venueId) {
     if (venueId) setSelectedVenueId(venueId);
@@ -1219,7 +1300,6 @@ export default function App() {
               <ProfileView
                 user={user}
                 profile={profile}
-                mode={mode}
                 canModerate={canModerate(profile, mode)}
                 badgeProgress={badgeProgress}
                 notice={notice}
@@ -2148,7 +2228,7 @@ function BadgePanel({ progress }) {
   );
 }
 
-function ProfileView({ user, profile, mode, canModerate, badgeProgress, notice, authBusy, contributorName, onContributorNameChange, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissNotice, onDismissInstall }) {
+function ProfileView({ user, profile, canModerate, badgeProgress, notice, authBusy, contributorName, onContributorNameChange, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissNotice, onDismissInstall }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState('login');
@@ -2159,17 +2239,7 @@ function ProfileView({ user, profile, mode, canModerate, badgeProgress, notice, 
       <div className="profile-card app-card">
         <p className="eyebrow">Min profil</p>
         <h1>{user ? 'Du er logget inn' : 'Frivillig profil'}</h1>
-        <p>Du kan sende vurderinger uten konto. Badges teller på denne enheten, og innlogging kan senere brukes til å gjøre krav på bidragene dine.</p>
-        <div className="mode-card">
-          <strong>{mode === 'demo' ? 'Demo uten backend' : 'Supabase aktiv'}</strong>
-          <span>{mode === 'demo' ? 'Vurderinger lagres bare på denne enheten.' : 'Vurderinger lagres i felles database.'}</span>
-        </div>
-        {user && (
-          <div className="role-card">
-            <span>Rolle</span>
-            <strong>{mode === 'demo' ? 'admin-demo' : profile?.role || 'user'}</strong>
-          </div>
-        )}
+        <p>Velg hvordan navnet ditt vises når du bidrar, og hold oversikt over innsatsen din.</p>
       </div>
 
       <div className="form-card app-card">
@@ -2210,11 +2280,7 @@ function ProfileView({ user, profile, mode, canModerate, badgeProgress, notice, 
         <div className="form-card app-card">
           <p>Innlogget som <strong>{displayName}</strong></p>
           <button className="secondary-action" type="button" onClick={onLogout}>Logg ut</button>
-          {canModerate ? (
-            <button className="primary-action" type="button" onClick={onAdmin}>Åpne moderering</button>
-          ) : (
-            <p className="muted">Denne brukeren har ikke moderatorrolle ennå.</p>
-          )}
+          {canModerate && <button className="primary-action" type="button" onClick={onAdmin}>Åpne moderering</button>}
         </div>
       ) : (
         <form className="form-card app-card" onSubmit={(event) => { event.preventDefault(); onLogin({ username, password, authMode }); }}>

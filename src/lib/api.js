@@ -68,6 +68,14 @@ function normalizeFacilityReport(row) {
   };
 }
 
+function visibleLocalContribution(row) {
+  return !row?.status || row.status === 'approved' || row.approved === true;
+}
+
+function matchesLocalOwner(row, userId, deviceId) {
+  return Boolean((userId && row?.user_id === userId) || (deviceId && row?.anonymous_device_id === deviceId));
+}
+
 function cleanUserName(value) {
   return String(value || '').trim().slice(0, 40);
 }
@@ -594,6 +602,71 @@ export async function submitVenueRequest(request) {
   const { data, error } = await supabase.from('venue_requests').insert(payload).select('*').single();
   if (error) throw error;
   return data;
+}
+
+export async function fetchBadgeContributions() {
+  const deviceId = getAnonymousDeviceId();
+
+  if (!hasSupabaseConfig) {
+    const demoUser = getDemoUser();
+    const userId = demoUser?.id || null;
+    return {
+      reviews: readLocal(LOCAL_REVIEW_KEY, [])
+        .filter(visibleLocalContribution)
+        .filter((row) => matchesLocalOwner(row, userId, deviceId)),
+      facilityReports: readLocal(LOCAL_FACILITY_KEY, [])
+        .filter(visibleLocalContribution)
+        .filter((row) => matchesLocalOwner(row, userId, deviceId)),
+      venueRequests: [
+        ...readLocal(LOCAL_VENUE_KEY, []).filter((row) => row.status !== 'rejected'),
+        ...readLocal(LOCAL_CUSTOM_VENUE_KEY, []),
+      ],
+    };
+  }
+
+  const authUser = await getOptionalAuthenticatedUser();
+
+  async function fetchOwnedRows(table, select, options = {}) {
+    if (!authUser?.id && !deviceId) return [];
+
+    const rows = [];
+    for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+      let query = supabase
+        .from(table)
+        .select(select)
+        .order('created_at', { ascending: true })
+        .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+      if (options.status) query = query.eq('status', options.status);
+      if (authUser?.id && deviceId) query = query.or(`user_id.eq.${authUser.id},anonymous_device_id.eq.${deviceId}`);
+      else if (authUser?.id) query = query.eq('user_id', authUser.id);
+      else query = query.eq('anonymous_device_id', deviceId);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      rows.push(...data);
+      if (data.length < SUPABASE_PAGE_SIZE) break;
+    }
+    return rows;
+  }
+
+  const [reviews, facilityReports, venueRequests] = await Promise.all([
+    fetchOwnedRows('reviews', 'id, venue_id, user_id, anonymous_device_id, user_name, tribunesliter_minutes, comfort_score, view_score, temperature_score, accessibility_score, event_type, visit_date, comment, created_at, venues(id, municipality, is_outdoor)', { status: 'approved' }),
+    fetchOwnedRows('facility_reports', 'id, venue_id, user_id, anonymous_device_id, user_name, seating_type, seat_comfort, has_backrest, heating_level, toilet_quality, kiosk_status, parking, accessibility, roof_cover, view_quality, noise_level, notes, created_at, venues(id, municipality, is_outdoor)', { status: 'approved' }),
+    authUser?.id
+      ? supabase
+          .from('venue_requests')
+          .select('id, user_id, name, municipality, status, created_at')
+          .eq('user_id', authUser.id)
+          .neq('status', 'rejected')
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return data;
+          })
+      : Promise.resolve([]),
+  ]);
+
+  return { reviews, facilityReports, venueRequests };
 }
 
 export async function fetchPendingModeration() {
