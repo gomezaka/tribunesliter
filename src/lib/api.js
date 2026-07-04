@@ -13,6 +13,7 @@ const USERNAME_EMAIL_DOMAIN = 'tribunesliter.local';
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,24}$/;
 const MAX_COMMENT_LENGTH = 500;
 const MAX_NOTES_LENGTH = 500;
+const SUPABASE_PAGE_SIZE = 1000;
 
 function readLocal(key, fallback = []) {
   try {
@@ -356,13 +357,22 @@ export async function fetchVenues() {
     });
   }
 
-  const { data, error } = await supabase
-    .from('venue_public_cards')
-    .select('*')
-    .order('name', { ascending: true });
+  const rows = [];
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('venue_public_cards')
+      .select('*')
+      .order('name', { ascending: true })
+      .order('municipality', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
 
-  if (error) throw error;
-  return data.map(normalizeVenue);
+    if (error) throw error;
+    rows.push(...data);
+    if (data.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return rows.map(normalizeVenue);
 }
 
 export async function createVenue(venue) {
