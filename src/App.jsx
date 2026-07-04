@@ -81,20 +81,6 @@ const RATING_SCALES = {
     { value: 4, label: 'Overraskende sivilisert', emoji: '🙂' },
     { value: 5, label: 'Porselensparadis', emoji: '😇' },
   ],
-  wardrobe: [
-    { value: 1, label: 'Pose på gulvet', emoji: '🧦' },
-    { value: 2, label: 'Trangt og klamt', emoji: '😬' },
-    { value: 3, label: 'Helt grei garderobe', emoji: '😐' },
-    { value: 4, label: 'God plass', emoji: '🙂' },
-    { value: 5, label: 'Luksusbenken', emoji: '🏆' },
-  ],
-  shower: [
-    { value: 1, label: 'Tørrdusj', emoji: '🚱' },
-    { value: 2, label: 'Lunkent håp', emoji: '🥶' },
-    { value: 3, label: 'Dusj finnes', emoji: '😐' },
-    { value: 4, label: 'Varmt nok', emoji: '🙂' },
-    { value: 5, label: 'Spa etter kamp', emoji: '🚿' },
-  ],
 };
 
 const KIOSK_OPTIONS = [
@@ -135,8 +121,6 @@ const FACILITY_RATING_FIELDS = {
     { key: 'facility_heating_level', label: 'Temperatur', icon: '🌡️', scale: 'temperature' },
     { key: 'facility_noise_level', label: 'Lydnivå', icon: '🔊', scale: 'noise' },
     { key: 'facility_toilet_quality', label: 'Toalett', icon: '🚻', scale: 'toilet' },
-    { key: 'facility_garderobe_quality', label: 'Garderobe', icon: '🎒', scale: 'wardrobe' },
-    { key: 'facility_shower_quality', label: 'Dusj', icon: '🚿', scale: 'shower' },
   ],
   outdoor: [
     { key: 'facility_seat_comfort', label: 'Sittekomfort', icon: RUMPE_ICON, scale: 'seating' },
@@ -155,8 +139,6 @@ const UNIFIED_RATING_FIELDS = {
     { key: 'temperature_score', facilityKey: 'facility_heating_level', label: 'Temperatur', icon: '🌡️', scale: 'temperature' },
     { key: 'accessibility_score', facilityKey: 'facility_noise_level', label: 'Lydnivå', icon: '🔊', scale: 'noise' },
     { key: 'facility_toilet_quality', label: 'Toalett', icon: '🚻', scale: 'toilet' },
-    { key: 'facility_garderobe_quality', label: 'Garderobe', icon: '🎒', scale: 'wardrobe' },
-    { key: 'facility_shower_quality', label: 'Dusj', icon: '🚿', scale: 'shower' },
   ],
   outdoor: [
     { key: 'comfort_score', facilityKey: 'facility_seat_comfort', label: 'Sittekomfort', icon: RUMPE_ICON, scale: 'seating' },
@@ -177,8 +159,6 @@ const FACILITY_DISPLAY_ROWS = {
     { label: 'Temperatur', emoji: '🌡️', value: (facilities) => ratingLabel('temperature', facilities.heating_level) },
     { label: 'Lydnivå', emoji: '🔊', value: (facilities) => ratingLabel('noise', facilities.noise_level) },
     { label: 'Toalett', emoji: '🚻', value: (facilities) => ratingLabel('toilet', facilities.toilet_quality) },
-    { label: 'Garderobe', emoji: '🎒', value: (facilities) => ratingLabel('wardrobe', facilities.garderobe_quality) },
-    { label: 'Dusj', emoji: '🚿', value: (facilities) => ratingLabel('shower', facilities.shower_quality) },
     { label: 'Kiosk / kaffe', emoji: '☕', value: (facilities) => kioskLabel(facilities.kiosk_status) },
     { label: 'Parkering', emoji: '🚗', value: (facilities) => parkingLabel(facilities.parking) },
   ],
@@ -247,8 +227,6 @@ function makeEmptyReview() {
     facility_has_backrest: false,
     facility_heating_level: 3,
     facility_toilet_quality: 3,
-    facility_garderobe_quality: 3,
-    facility_shower_quality: 3,
     facility_kiosk_status: 'Vaffelrykter',
     facility_parking: 'Standard kaos',
     facility_accessibility: 3,
@@ -270,8 +248,6 @@ function makeFacilityReportFromVenue(venue) {
     facility_has_backrest: Boolean(facilities.has_backrest),
     facility_heating_level: Number(facilities.heating_level || 3),
     facility_toilet_quality: Number(facilities.toilet_quality || 3),
-    facility_garderobe_quality: Number(facilities.garderobe_quality || 3),
-    facility_shower_quality: Number(facilities.shower_quality || 3),
     facility_kiosk_status: kioskLabel(facilities.kiosk_status),
     facility_parking: parkingLabel(facilities.parking),
     facility_accessibility: Number(facilities.accessibility || 3),
@@ -326,6 +302,10 @@ function RumpeText({ children }) {
 
 function userDisplayName(user, profile, fallback = 'tribunesliter') {
   return profile?.display_name || profile?.username || user?.user_metadata?.display_name || user?.user_metadata?.username || user?.email?.split('@')[0] || fallback;
+}
+
+function cleanContributorName(value) {
+  return String(value || '').trim().slice(0, 40);
 }
 
 function shortDate(date) {
@@ -418,6 +398,7 @@ const SAVED_VENUES_KEY = 'tribunesliter.savedVenues.v1';
 const RECENT_VENUES_KEY = 'tribunesliter.recentVenues.v1';
 const INSTALL_HINT_DISMISSED_KEY = 'tribunesliter.installHint.dismissed.v1';
 const BADGE_PROGRESS_KEY = 'tribunesliter.badgeProgress.v1';
+const CONTRIBUTOR_NAME_KEY = 'tribunesliter.contributorName.v1';
 const APP_REQUEST_TIMEOUT_MS = 12000;
 const MAX_COMMENT_LENGTH = 500;
 const MAX_NOTES_LENGTH = 500;
@@ -718,6 +699,10 @@ export default function App() {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(INSTALL_HINT_DISMISSED_KEY) === '1';
   });
+  const [contributorName, setContributorName] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return window.localStorage.getItem(CONTRIBUTOR_NAME_KEY) || '';
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -798,6 +783,26 @@ export default function App() {
   }, [badgeProgress]);
 
   useEffect(() => {
+    const fallbackName = cleanContributorName(userDisplayName(user, profile, ''));
+    setContributorName((current) => (cleanContributorName(current) ? current : fallbackName));
+  }, [user, profile]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CONTRIBUTOR_NAME_KEY, contributorName);
+    } catch {
+      // Contribution name only improves form ergonomics.
+    }
+  }, [contributorName]);
+
+  useEffect(() => {
+    const name = effectiveContributorName();
+    if (!name) return;
+    setReviewForm((current) => (cleanContributorName(current.user_name) ? current : { ...current, user_name: name }));
+    setFacilityForm((current) => (cleanContributorName(current.user_name) ? current : { ...current, user_name: name }));
+  }, [contributorName, user, profile]);
+
+  useEffect(() => {
     function handleBeforeInstallPrompt(event) {
       event.preventDefault();
       setInstallPrompt(event);
@@ -873,6 +878,7 @@ export default function App() {
         ...current,
         venue_id: venueId,
         venue_municipality: venue?.municipality || current.venue_municipality,
+        user_name: cleanContributorName(current.user_name) || effectiveContributorName(),
       }));
     }
     if (nextView === 'venue' && venueId) {
@@ -906,6 +912,18 @@ export default function App() {
 
   function addBadgeProgress(patch) {
     setBadgeProgress((current) => mergeBadgeProgress(current, patch));
+  }
+
+  function effectiveContributorName() {
+    return cleanContributorName(contributorName) || cleanContributorName(userDisplayName(user, profile, ''));
+  }
+
+  function updateContributorName(value) {
+    const nextName = String(value || '').slice(0, 40);
+    const formName = cleanContributorName(nextName);
+    setContributorName(nextName);
+    setReviewForm((current) => ({ ...current, user_name: formName }));
+    setFacilityForm((current) => ({ ...current, user_name: formName }));
   }
 
   async function shareVenue(venue) {
@@ -987,24 +1005,25 @@ export default function App() {
   async function handleSubmitReview(event) {
     event.preventDefault();
     const targetVenueId = reviewForm.venue_id || selectedVenue?.id;
+    const userName = cleanContributorName(reviewForm.user_name) || effectiveContributorName();
     if (!targetVenueId) {
       setNotice('Velg anlegg først.');
       return;
     }
-    if (!reviewForm.user_name.trim()) {
+    if (!userName) {
       setNotice('Skriv inn navn eller kallenavn før du sender vurderingen.');
       return;
     }
 
     try {
       const targetVenue = venues.find((venue) => venue.id === targetVenueId) || selectedVenue;
-      const payload = { ...reviewForm, venue_id: targetVenueId, venue_municipality: targetVenue?.municipality || reviewForm.venue_municipality };
+      const payload = { ...reviewForm, user_name: userName, venue_id: targetVenueId, venue_municipality: targetVenue?.municipality || reviewForm.venue_municipality };
       await submitReview(payload);
       await refreshVenues();
       setReviews(await fetchReviews(targetVenueId));
       setSelectedVenueId(targetVenueId);
       addBadgeProgress(buildReviewBadgeProgressPatch(payload, targetVenue));
-      setReviewForm(makeEmptyReview());
+      setReviewForm({ ...makeEmptyReview(), user_name: effectiveContributorName() });
       setNotice('Vurderingen er publisert. Takk for bidraget!');
       go('thanks', targetVenueId);
     } catch (error) {
@@ -1021,9 +1040,9 @@ export default function App() {
     }
     try {
       const targetVenue = venues.find((venue) => venue.id === targetVenueId) || selectedVenue;
-      const payload = { ...facilityForm, venue_id: targetVenueId, venue_name: targetVenue?.name || facilityForm.venue_name };
+      const payload = { ...facilityForm, user_name: cleanContributorName(facilityForm.user_name) || effectiveContributorName(), venue_id: targetVenueId, venue_name: targetVenue?.name || facilityForm.venue_name };
       await submitFacilityReport(payload);
-      setFacilityForm(makeFacilityReportFromVenue(targetVenue));
+      setFacilityForm({ ...makeFacilityReportFromVenue(targetVenue), user_name: effectiveContributorName() });
       addBadgeProgress(buildFacilityBadgeProgressPatch(payload, targetVenue));
       await refreshVenues();
       go('venue', targetVenueId);
@@ -1039,7 +1058,7 @@ export default function App() {
     try {
       const existingVenue = venues.find((venue) => venueLookupKey(venue) === venueLookupKey(venueRequest));
       if (existingVenue) {
-        setReviewForm((current) => makeReviewFormForVenue(existingVenue, current));
+        setReviewForm((current) => ({ ...makeReviewFormForVenue(existingVenue, current), user_name: cleanContributorName(current.user_name) || effectiveContributorName() }));
         setVenueRequest(emptyVenueRequest);
         go('rate', existingVenue.id);
         setNotice('Anlegget finnes allerede. Du kan legge inn vurdering nå.');
@@ -1049,7 +1068,7 @@ export default function App() {
       const createdVenue = await createVenue(venueRequest);
       const updatedVenues = await refreshVenues();
       const targetVenue = updatedVenues.find((venue) => venue.id === createdVenue.id) || createdVenue;
-      setReviewForm((current) => makeReviewFormForVenue(targetVenue, current));
+      setReviewForm((current) => ({ ...makeReviewFormForVenue(targetVenue, current), user_name: cleanContributorName(current.user_name) || effectiveContributorName() }));
       setVenueRequest(emptyVenueRequest);
       addBadgeProgress({ venueRequests: 1 });
       go('rate', targetVenue.id);
@@ -1163,11 +1182,11 @@ export default function App() {
                 reviews={reviews}
                 onBack={() => go('home')}
                 onRate={() => {
-                  setReviewForm((form) => makeReviewFormForVenue(selectedVenue, form));
+                  setReviewForm((form) => ({ ...makeReviewFormForVenue(selectedVenue, form), user_name: cleanContributorName(form.user_name) || effectiveContributorName() }));
                   go('rate', selectedVenue.id);
                 }}
                 onReportFacility={() => {
-                  setFacilityForm(makeFacilityReportFromVenue(selectedVenue));
+                  setFacilityForm({ ...makeFacilityReportFromVenue(selectedVenue), user_name: effectiveContributorName() });
                   go('facility', selectedVenue.id);
                 }}
                 isSaved={savedVenueIds.includes(selectedVenue.id)}
@@ -1205,6 +1224,8 @@ export default function App() {
                 badgeProgress={badgeProgress}
                 notice={notice}
                 authBusy={authBusy}
+                contributorName={contributorName}
+                onContributorNameChange={updateContributorName}
                 onLogin={handleLogin}
                 onLogout={handleLogout}
                 onAdmin={loadModeration}
@@ -2127,7 +2148,7 @@ function BadgePanel({ progress }) {
   );
 }
 
-function ProfileView({ user, profile, mode, canModerate, badgeProgress, notice, authBusy, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissNotice, onDismissInstall }) {
+function ProfileView({ user, profile, mode, canModerate, badgeProgress, notice, authBusy, contributorName, onContributorNameChange, onLogin, onLogout, onAdmin, onInstall, canInstall, installHintDismissed, onDismissNotice, onDismissInstall }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState('login');
@@ -2149,6 +2170,24 @@ function ProfileView({ user, profile, mode, canModerate, badgeProgress, notice, 
             <strong>{mode === 'demo' ? 'admin-demo' : profile?.role || 'user'}</strong>
           </div>
         )}
+      </div>
+
+      <div className="form-card app-card">
+        <p className="eyebrow">Innstillinger</p>
+        <label>
+          Brukernavn i vurderinger
+          <input
+            value={contributorName}
+            onChange={(event) => onContributorNameChange(event.target.value)}
+            type="text"
+            inputMode="text"
+            autoCapitalize="none"
+            autoComplete="nickname"
+            placeholder={displayName}
+            maxLength="40"
+          />
+        </label>
+        <p className="micro-copy">Brukes automatisk når du sender vurderinger og fasilitetsinfo.</p>
       </div>
 
       <BadgePanel progress={badgeProgress} />
@@ -2266,9 +2305,10 @@ function AdminView({
   const [venueDrafts, setVenueDrafts] = useState({});
   const [venueSearch, setVenueSearch] = useState('');
   const pendingCount = moderation.venueRequests.length;
+  const hasVenueSearch = venueSearch.trim().length >= 2;
   const visibleVenues = useMemo(() => {
     const needle = venueSearch.trim().toLowerCase();
-    if (!needle) return venues;
+    if (needle.length < 2) return [];
     return venues.filter((venue) => [
       venue.name,
       venue.municipality,
@@ -2316,7 +2356,9 @@ function AdminView({
           Finn anlegg
           <input value={venueSearch} onChange={(event) => setVenueSearch(event.target.value)} placeholder="Søk etter f.eks. Hotell City" />
         </label>
-        {!visibleVenues.length ? (
+        {!hasVenueSearch ? (
+          <p className="muted">Søk med minst to tegn for å vise synlige anlegg.</p>
+        ) : !visibleVenues.length ? (
           <p className="muted">Ingen synlige anlegg matcher søket.</p>
         ) : (
           <div className="review-list">
@@ -2413,8 +2455,6 @@ function ModerationFacilityCard({ report, busy, onReject }) {
       seat_comfort: report.seat_comfort,
       heating_level: report.heating_level,
       toilet_quality: report.toilet_quality,
-      garderobe_quality: report.garderobe_quality,
-      shower_quality: report.shower_quality,
       kiosk_status: report.kiosk_status,
       parking: report.parking,
       accessibility: report.accessibility,

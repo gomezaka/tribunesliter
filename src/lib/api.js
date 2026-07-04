@@ -468,8 +468,6 @@ function buildFacilityPayload(review, userId, options = {}) {
     has_backrest: Boolean(review.facility_has_backrest ?? review.has_backrest),
     heating_level: Number(review.facility_heating_level || review.heating_level || review.temperature_score || 3),
     toilet_quality: Number(review.facility_toilet_quality || review.toilet_quality || 3),
-    garderobe_quality: Number(review.facility_garderobe_quality || review.garderobe_quality || 3),
-    shower_quality: Number(review.facility_shower_quality || review.shower_quality || 3),
     kiosk_status: review.facility_kiosk_status || review.kiosk_status || null,
     parking: review.facility_parking || review.parking || null,
     accessibility: Number(review.facility_accessibility || review.accessibility || review.accessibility_score || 3),

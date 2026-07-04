@@ -44,8 +44,6 @@ create table if not exists public.facility_reports (
   parking text,
   accessibility int check (accessibility between 1 and 5),
   roof_cover boolean not null default false,
-  garderobe_quality int check (garderobe_quality between 1 and 5),
-  shower_quality int check (shower_quality between 1 and 5),
   view_quality int check (view_quality between 1 and 5),
   noise_level int check (noise_level between 1 and 5),
   notes text,
@@ -96,8 +94,6 @@ alter table public.facility_reports add column if not exists anonymous_device_id
 alter table public.reviews add column if not exists anonymous_device_id text;
 alter table public.facility_reports add column if not exists user_name text;
 alter table public.reviews add column if not exists user_name text;
-alter table public.facility_reports add column if not exists garderobe_quality int check (garderobe_quality between 1 and 5);
-alter table public.facility_reports add column if not exists shower_quality int check (shower_quality between 1 and 5);
 alter table public.profiles add column if not exists username text;
 alter table public.venue_requests add column if not exists venue_id uuid references public.venues(id) on delete set null;
 alter table public.venue_requests add column if not exists processed_by uuid references auth.users(id) on delete set null;
@@ -238,8 +234,6 @@ select
       'parking', fr.parking,
       'accessibility', fr.accessibility,
       'roof_cover', fr.roof_cover,
-      'garderobe_quality', fr.garderobe_quality,
-      'shower_quality', fr.shower_quality,
       'view_quality', fr.view_quality,
       'noise_level', fr.noise_level,
       'notes', fr.notes
@@ -270,8 +264,6 @@ left join lateral (
     fr2.parking,
     fr2.accessibility,
     fr2.roof_cover,
-    fr2.garderobe_quality,
-    fr2.shower_quality,
     fr2.view_quality,
     fr2.noise_level,
     fr2.notes,

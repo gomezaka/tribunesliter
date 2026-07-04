@@ -197,7 +197,7 @@ Denne versjonen gjør appen mer klar for ekte betatest:
 - moderator kan skjule/avvise feil fasilitetsinfo etter publisering
 - nyeste publiserte fasilitetsrapport oppdaterer hallprofilen
 - hallprofil viser anleggsinfo, kartlenke og når fasilitetsdata sist ble bekreftet
-- vurderingsskjemaet inkluderer garderobe og dusj
+- vurderingsskjemaet fokuserer på tribune, sikt, klima/underlag, toalett, kiosk og parkering
 
 Etter oppdatering må `docs/supabase-schema.sql` kjøres på nytt i Supabase, fordi `venue_public_cards` nå returnerer `facility_reported_at`.
 
