@@ -401,6 +401,7 @@ const INSTALL_HINT_DISMISSED_KEY = 'tribunesliter.installHint.dismissed.v1';
 const BADGE_PROGRESS_KEY = 'tribunesliter.badgeProgress.v1';
 const CONTRIBUTOR_NAME_KEY = 'tribunesliter.contributorName.v1';
 const APP_REQUEST_TIMEOUT_MS = 12000;
+const VENUE_REQUEST_TIMEOUT_MS = 45000;
 const MAX_COMMENT_LENGTH = 500;
 const MAX_NOTES_LENGTH = 500;
 
@@ -775,7 +776,7 @@ export default function App() {
       try {
         const [sessionResult, venuesResult] = await Promise.allSettled([
           withTimeout(getSession(), 'Innlogging tok for lang tid. Prøv å oppdatere siden.'),
-          withTimeout(fetchVenues(), 'Klarte ikke hente haller fra Supabase. Sjekk nettverk eller prøv igjen.'),
+          withTimeout(fetchVenues(), 'Klarte ikke hente hele anleggslisten fra Supabase. Sjekk nettverk eller prøv igjen.', VENUE_REQUEST_TIMEOUT_MS),
         ]);
         if (!mounted) return;
 

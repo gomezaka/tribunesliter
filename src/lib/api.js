@@ -365,19 +365,28 @@ export async function fetchVenues() {
     });
   }
 
-  const rows = [];
-  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from('venue_public_cards')
-      .select('*')
-      .order('name', { ascending: true })
-      .order('municipality', { ascending: true })
-      .order('id', { ascending: true })
-      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+  const venueQuery = (from) => supabase
+    .from('venue_public_cards')
+    .select('*', from === 0 ? { count: 'exact' } : undefined)
+    .order('name', { ascending: true })
+    .order('municipality', { ascending: true })
+    .order('id', { ascending: true })
+    .range(from, from + SUPABASE_PAGE_SIZE - 1);
 
-    if (error) throw error;
-    rows.push(...data);
-    if (data.length < SUPABASE_PAGE_SIZE) break;
+  const firstPage = await venueQuery(0);
+  if (firstPage.error) throw firstPage.error;
+
+  const rows = [...firstPage.data];
+  const totalCount = Number(firstPage.count || rows.length);
+  const remainingPages = [];
+  for (let from = SUPABASE_PAGE_SIZE; from < totalCount; from += SUPABASE_PAGE_SIZE) {
+    remainingPages.push(venueQuery(from));
+  }
+
+  const remainingResults = await Promise.all(remainingPages);
+  for (const result of remainingResults) {
+    if (result.error) throw result.error;
+    rows.push(...result.data);
   }
 
   return rows.map(normalizeVenue);
