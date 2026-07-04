@@ -4,6 +4,7 @@ import { demoReviews, demoVenues } from './demoData';
 
 const LOCAL_REVIEW_KEY = 'tribunesliter.localReviews.v2';
 const LOCAL_VENUE_KEY = 'tribunesliter.localVenueRequests.v2';
+const LOCAL_CUSTOM_VENUE_KEY = 'tribunesliter.localVenues.v1';
 const LOCAL_FACILITY_KEY = 'tribunesliter.localFacilityReports.v2';
 const LOCAL_HIDDEN_REVIEW_KEY = 'tribunesliter.hiddenReviews.v2';
 const LOCAL_ARCHIVED_VENUE_KEY = 'tribunesliter.archivedVenues.v1';
@@ -72,6 +73,57 @@ function cleanUserName(value) {
 
 function cleanLimitedText(value, maxLength) {
   return String(value || '').trim().slice(0, maxLength);
+}
+
+function cleanVenueText(value, maxLength = 120) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength);
+}
+
+function sameVenue(a, b) {
+  return cleanVenueText(a?.name).toLowerCase() === cleanVenueText(b?.name).toLowerCase()
+    && cleanVenueText(a?.municipality).toLowerCase() === cleanVenueText(b?.municipality).toLowerCase();
+}
+
+function localVenueId(name, municipality, existingVenues = []) {
+  const slug = `${name}-${municipality}`
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'nytt-anlegg';
+  const usedIds = new Set(existingVenues.map((venue) => venue.id));
+  let candidate = `local-${slug}`;
+  let index = 2;
+  while (usedIds.has(candidate)) {
+    candidate = `local-${slug}-${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+function buildVenuePayload(venue) {
+  const name = cleanVenueText(venue.name, 80);
+  const municipality = cleanVenueText(venue.municipality, 80);
+  if (!name) throw new Error('Skriv inn navn på anlegget.');
+  if (!municipality) throw new Error('Skriv inn kommune for anlegget.');
+
+  const venueType = cleanVenueText(venue.venue_type, 60) || 'Flerbrukshall';
+  const isOutdoor = Boolean(venue.is_outdoor || /utendørs|stadion|bane/i.test(venueType));
+  const sportTags = Array.isArray(venue.sport_tags)
+    ? venue.sport_tags.map((tag) => cleanVenueText(tag, 40)).filter(Boolean).slice(0, 6)
+    : [];
+
+  return {
+    name,
+    municipality,
+    address: cleanVenueText(venue.address, 160) || null,
+    venue_type: venueType,
+    sport_tags: sportTags,
+    cover_emoji: venue.cover_emoji || (isOutdoor ? '⚽' : '🏟️'),
+    is_outdoor: isOutdoor,
+    status: 'approved',
+  };
 }
 
 function todayIsoDate() {
@@ -280,10 +332,11 @@ async function getOptionalAuthenticatedUser() {
 export async function fetchVenues() {
   if (!hasSupabaseConfig) {
     const localReviews = readLocal(LOCAL_REVIEW_KEY, []);
+    const localVenues = readLocal(LOCAL_CUSTOM_VENUE_KEY, []);
     const localFacilityReports = readLocal(LOCAL_FACILITY_KEY, []);
     const hiddenIds = new Set(readLocal(LOCAL_HIDDEN_REVIEW_KEY, []));
     const archivedVenueIds = new Set(readLocal(LOCAL_ARCHIVED_VENUE_KEY, []));
-    return demoVenues.filter((venue) => !archivedVenueIds.has(venue.id)).map((venue) => {
+    return [...demoVenues, ...localVenues].filter((venue) => !archivedVenueIds.has(venue.id)).map((venue) => {
       const allReviews = [...demoReviews, ...localReviews]
         .filter((review) => review.venue_id === venue.id)
         .filter((review) => review.status !== 'pending' && review.status !== 'rejected' && review.status !== 'hidden')
@@ -310,6 +363,40 @@ export async function fetchVenues() {
 
   if (error) throw error;
   return data.map(normalizeVenue);
+}
+
+export async function createVenue(venue) {
+  const payload = buildVenuePayload(venue);
+
+  if (!hasSupabaseConfig) {
+    const localVenues = readLocal(LOCAL_CUSTOM_VENUE_KEY, []);
+    const existingVenue = [...demoVenues, ...localVenues].find((item) => sameVenue(item, payload));
+    if (existingVenue) return normalizeVenue(existingVenue);
+
+    const now = new Date().toISOString();
+    const localVenue = normalizeVenue({
+      ...payload,
+      id: localVenueId(payload.name, payload.municipality, [...demoVenues, ...localVenues]),
+      summary: 'Ingen vurderinger ennå. Bli den første som tester tribunen.',
+      facilities: {},
+      packlist: payload.is_outdoor
+        ? ['Sitteunderlag', 'Varm drikke', 'Ekstra lag', 'Regnjakke']
+        : ['Sitteunderlag', 'Kaffe', 'Småpenger til kiosk'],
+      created_at: now,
+      updated_at: now,
+    });
+    writeLocal(LOCAL_CUSTOM_VENUE_KEY, [localVenue, ...localVenues]);
+    return localVenue;
+  }
+
+  const authUser = await getOptionalAuthenticatedUser();
+  const { data, error } = await supabase
+    .from('venues')
+    .insert({ ...payload, created_by: authUser?.id || null })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return normalizeVenue(data);
 }
 
 export async function archiveVenue(venueId) {

@@ -512,6 +512,15 @@ input[type="range"] { accent-color: var(--amber); padding: 0; border: 0; box-sha
   margin-top: 14px;
   font-weight: 800;
 }
+.inline-add-venue {
+  width: 100%;
+  min-height: 44px;
+  border: 1.5px dashed #CDE3D8;
+  border-radius: 13px;
+  background: var(--primary-tint);
+  color: var(--primary-dark);
+  font-weight: 900;
+}
 .micro-copy { color: var(--muted); font-size: 12px; font-weight: 700; text-align: center; }
 .inline-rumpe-icon {
   display: inline-block;

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   archiveVenue,
   approveVenueRequest,
+  createVenue,
   fetchPendingModeration,
   fetchReviews,
   fetchVenues,
@@ -17,7 +18,6 @@ import {
   signUpWithUsernamePassword,
   submitFacilityReport,
   submitReview,
-  submitVenueRequest,
 } from './lib/api';
 
 const ICON_VERSION = '20260702-gladrompe-all';
@@ -428,7 +428,7 @@ const BADGE_DEFINITIONS = [
   { id: 'rumpekompass', icon: RUMPE_ICON, title: 'Rumpekompasset', description: '10 sjekk-ins. Du finner benkekvalitet i blinde.', metric: 'checkIns', target: 10 },
   { id: 'banesliter', icon: '🏟️', title: 'Banesliter', description: '25 sjekk-ins. Lokalidrettens uoffisielle sitteekspert.', metric: 'checkIns', target: 25 },
   { id: 'vaffelvarsler', icon: '🧇', title: 'Vaffelvarsler', description: '3 fasilitetsbidrag om kiosk, do eller parkering.', metric: 'facilityReports', target: 3 },
-  { id: 'kartfikser', icon: '🗺️', title: 'Kartfikser', description: 'Foreslått et manglende anlegg.', metric: 'venueRequests', target: 1 },
+  { id: 'kartfikser', icon: '🗺️', title: 'Kartfikser', description: 'Lagt til et manglende anlegg.', metric: 'venueRequests', target: 1 },
   { id: 'treplanketemmeren', icon: '🪵', title: 'Treplanketemmeren', description: '5 utendørsbaner vurdert. Du har overlevd mer trebenk enn kroppen anbefaler.', metric: 'outdoorReviews', target: 5 },
   { id: 'hallstølen', icon: '🏐', title: 'Hallstølen', description: '5 innendørsanlegg vurdert. Ribbevegg, klappstol og betongtribune er kartlagt.', metric: 'indoorReviews', target: 5 },
   { id: 'kioskprofeten', icon: '🌭', title: 'Kioskprofeten', description: '5 kioskvurderinger. Du lukter vaffelplate på 300 meters avstand.', metric: 'kioskReports', target: 5 },
@@ -445,7 +445,7 @@ const BADGE_DEFINITIONS = [
   { id: 'vaffelvarsler-deluxe', icon: '🧇', title: 'Vaffelvarsler Deluxe', description: '10 fasilitetsbidrag. Appens uoffisielle kiosktilsyn.', metric: 'facilityReports', target: 10 },
   { id: 'glem-bil', icon: '🚶', title: 'Glem bil', description: '3 parkeringsvurderinger med dårligste alternativ. Folket er advart.', metric: 'noCarParkingReviews', target: 3 },
   { id: 'sitteplass-sheriffen', icon: '🤠', title: 'Sitteplass-sheriffen', description: '25 sitteplassvurderinger. Patruljerer tribuner med øm korsrygg.', metric: 'seatingReports', target: 25 },
-  { id: 'mini-arkitekten', icon: '🏗️', title: 'Mini-arkitekten', description: '5 manglende anlegg foreslått. Kartet bygges én sliten tribune av gangen.', metric: 'venueRequests', target: 5 },
+  { id: 'mini-arkitekten', icon: '🏗️', title: 'Mini-arkitekten', description: '5 manglende anlegg lagt til. Kartet bygges én sliten tribune av gangen.', metric: 'venueRequests', target: 5 },
   { id: 'førstemann-på-plass', icon: '⏱️', title: 'Førstemann på plass', description: 'Første vurdering på et nytt anlegg. Noen måtte teste benken først.', metric: 'firstReviews', target: 1 },
   { id: 'folkets-rumpeombud', icon: RUMPE_ICON, title: 'Folkets rumpeombud', description: '50 vurderinger totalt. Taler sitteflatenes sak i hele landet.', metric: 'checkIns', target: 50 },
   { id: 'tribunesliter-elite', icon: '🏆', title: 'Tribunesliter Elite', description: '100 vurderinger totalt. På dette nivået bør du få egen klappstol.', metric: 'checkIns', target: 100 },
@@ -669,6 +669,12 @@ function errorMessage(error, fallback = 'Ukjent feil.') {
   return fallback;
 }
 
+function venueLookupKey(venue) {
+  return [venue?.name, venue?.municipality]
+    .map((value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase())
+    .join('::');
+}
+
 export default function App() {
   const [view, setView] = useState('home');
   const [venues, setVenues] = useState([]);
@@ -877,6 +883,16 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function openNewVenueForm(draft = {}) {
+    setVenueRequest({
+      ...emptyVenueRequest,
+      ...draft,
+      name: String(draft.name || '').trim(),
+      municipality: String(draft.municipality || '').trim(),
+    });
+    go('newVenue');
+  }
+
   function toggleSavedVenue(venueId) {
     if (!venueId) return;
     setSavedVenueIds((current) => {
@@ -1019,18 +1035,25 @@ export default function App() {
 
   async function handleSubmitVenueRequest(event) {
     event.preventDefault();
-    if (!user && hasSupabaseConfig) {
-      setNotice('Du må logge inn før du kan foreslå nytt anlegg.');
-      go('profile');
-      return;
-    }
 
     try {
-      await submitVenueRequest(venueRequest);
+      const existingVenue = venues.find((venue) => venueLookupKey(venue) === venueLookupKey(venueRequest));
+      if (existingVenue) {
+        setReviewForm((current) => makeReviewFormForVenue(existingVenue, current));
+        setVenueRequest(emptyVenueRequest);
+        go('rate', existingVenue.id);
+        setNotice('Anlegget finnes allerede. Du kan legge inn vurdering nå.');
+        return;
+      }
+
+      const createdVenue = await createVenue(venueRequest);
+      const updatedVenues = await refreshVenues();
+      const targetVenue = updatedVenues.find((venue) => venue.id === createdVenue.id) || createdVenue;
+      setReviewForm((current) => makeReviewFormForVenue(targetVenue, current));
       setVenueRequest(emptyVenueRequest);
       addBadgeProgress({ venueRequests: 1 });
-      go('home');
-      setNotice('Forslaget er lagret og må godkjennes før det vises offentlig.');
+      go('rate', targetVenue.id);
+      setNotice('Anlegget er lagt til. Legg inn første vurdering nå.');
     } catch (error) {
       setNotice(errorMessage(error));
     }
@@ -1094,7 +1117,7 @@ export default function App() {
                 profile={profile}
                 onSearch={() => go('search')}
                 onVenue={(id) => go('venue', id)}
-                onNewVenue={() => go('newVenue')}
+                onNewVenue={() => openNewVenueForm()}
               />
             )}
             {view === 'search' && (
@@ -1115,7 +1138,7 @@ export default function App() {
                 onSportFilter={setSportFilter}
                 onSortMode={setSortMode}
                 onVenue={(id) => go('venue', id)}
-                onNewVenue={() => go('newVenue')}
+                onNewVenue={() => openNewVenueForm({ name: query, municipality: municipalityFilter === 'all' ? '' : municipalityFilter })}
               />
             )}
             {view === 'explore' && (
@@ -1123,7 +1146,7 @@ export default function App() {
                 venues={venues}
                 municipalities={municipalities}
                 onVenue={(id) => go('venue', id)}
-                onNewVenue={() => go('newVenue')}
+                onNewVenue={() => openNewVenueForm()}
               />
             )}
             {view === 'saved' && (
@@ -1159,6 +1182,7 @@ export default function App() {
                 form={reviewForm}
                 setForm={setReviewForm}
                 onSubmit={handleSubmitReview}
+                onNewVenue={(draft) => openNewVenueForm(draft)}
                 onBack={() => go(selectedVenue ? 'venue' : 'home', selectedVenue?.id)}
               />
             )}
@@ -1289,7 +1313,7 @@ function HomeView({ venues, recentVenues, user, profile, onSearch, onVenue, onNe
             {recentCards.map((venue) => <RecentVenueCard key={venue.id} venue={venue} onClick={() => onVenue(venue.id)} />)}
           </div>
         ) : (
-          <EmptyState title="Ingen haller ennå" text="Når Supabase har anlegg, dukker de opp her." action="Foreslå anlegg" onAction={onNewVenue} />
+          <EmptyState title="Ingen haller ennå" text="Når Supabase har anlegg, dukker de opp her." action="Legg til anlegg" onAction={onNewVenue} />
         )}
       </section>
 
@@ -1316,7 +1340,7 @@ function HomeView({ venues, recentVenues, user, profile, onSearch, onVenue, onNe
       </section>
 
       <button className="floating-new-venue" type="button" onClick={onNewVenue}>
-        + Foreslå nytt anlegg
+        + Legg til nytt anlegg
       </button>
     </section>
   );
@@ -1444,15 +1468,15 @@ function SearchView({
         {venues.length === 0 ? (
           <EmptyState
             title="Ingen anlegg traff søket"
-            text="Prøv et annet filter, eller foreslå hallen hvis den mangler. Rumpa trenger data."
-            action="Foreslå anlegg"
+            text="Prøv et annet filter, eller legg inn hallen hvis den mangler. Rumpa trenger data."
+            action="Legg til anlegg"
             onAction={onNewVenue}
           />
         ) : venues.map((venue) => <VenueCard venue={venue} key={venue.id} onClick={() => onVenue(venue.id)} />)}
       </div>
 
       <button className="floating-new-venue" type="button" onClick={onNewVenue}>
-        + Foreslå nytt anlegg
+        + Legg til nytt anlegg
       </button>
       {!user && <p className="micro-copy">Alle kan lese. Logg inn når du vil bidra med rumpedata.</p>}
     </section>
@@ -1484,7 +1508,7 @@ function ExploreView({ venues, municipalities, onVenue, onNewVenue }) {
       </div>
 
       {grouped.length === 0 ? (
-        <EmptyState title="Ingen anlegg ennå" text="Legg inn vurdering første hall, så får utforsk-visningen innhold." action="Foreslå anlegg" onAction={onNewVenue} />
+        <EmptyState title="Ingen anlegg ennå" text="Legg inn første hall, så får utforsk-visningen innhold." action="Legg til anlegg" onAction={onNewVenue} />
       ) : (
         <div className="municipality-list">
           {grouped.map((group) => (
@@ -1724,7 +1748,7 @@ function ReviewCard({ review, venueIsOutdoor = false }) {
   );
 }
 
-function RateView({ venues, selectedVenue, form, setForm, onSubmit, onBack }) {
+function RateView({ venues, selectedVenue, form, setForm, onSubmit, onNewVenue, onBack }) {
   const [venueSearch, setVenueSearch] = useState('');
   const selectedVenueId = form.venue_id || selectedVenue?.id || '';
   const selectedVenueFromForm = venues.find((venue) => venue.id === selectedVenueId);
@@ -1809,6 +1833,13 @@ function RateView({ venues, selectedVenue, form, setForm, onSubmit, onBack }) {
               {filteredVenues.map((venue) => <option value={venue.id} key={venue.id}>{venue.name}</option>)}
             </select>
           </label>
+          <button
+            className="inline-add-venue"
+            type="button"
+            onClick={() => onNewVenue({ name: venueSearch, municipality: selectedMunicipality })}
+          >
+            + Legg til nytt anlegg
+          </button>
           {selectedMunicipality && filteredVenues.length === 0 && <p className="micro-copy">Ingen anlegg matcher søket i denne kommunen.</p>}
           <div className="two-cols">
             <label>
@@ -2180,11 +2211,11 @@ function NewVenueView({ form, setForm, onSubmit, onBack }) {
 
   return (
     <section className="screen detail-screen form-screen">
-      <FormHeader title="Foreslå anlegg" step="Nytt sted" onBack={onBack} />
+      <FormHeader title="Legg til anlegg" step="Nytt sted" onBack={onBack} />
       <form className="form-card app-card" onSubmit={onSubmit}>
         <p className="eyebrow">Mangler anlegget?</p>
-        <h1>Legg den i køen</h1>
-        <p>Forslaget kan godkjennes av moderator før det vises offentlig.</p>
+        <h1>Legg det inn</h1>
+        <p>Anlegget blir tilgjengelig med en gang, og moderator kan rydde i etterkant.</p>
         <label>
           Navn
           <input value={form.name} onChange={(event) => update('name', event.target.value)} required />
@@ -2214,7 +2245,7 @@ function NewVenueView({ form, setForm, onSubmit, onBack }) {
           Notat
           <textarea rows="4" value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Tribune, kiosk, parkering, vær, annet…" maxLength={MAX_NOTES_LENGTH} />
         </label>
-        <button className="primary-action" type="submit">Send forslag</button>
+        <button className="primary-action" type="submit">Legg til og vurder</button>
       </form>
     </section>
   );

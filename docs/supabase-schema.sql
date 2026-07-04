@@ -1,4 +1,4 @@
--- Tribunesliter v0.2.2 Supabase-schema
+-- Tribunesliter v0.2.13 Supabase-schema
 -- Kjør hele filen i Supabase SQL Editor.
 -- Trygt å kjøre flere ganger. Oppgraderer også v0.2/v0.2.1-tabeller.
 
@@ -303,6 +303,7 @@ drop policy if exists "Anonymous can submit pending reviews" on public.reviews;
 drop policy if exists "Logged in users can submit approved reviews" on public.reviews;
 drop policy if exists "Anonymous can submit pending facilities" on public.facility_reports;
 drop policy if exists "Logged in users can submit approved facilities" on public.facility_reports;
+drop policy if exists "Anyone can add approved venues" on public.venues;
 drop policy if exists "Anyone logged in can request venue" on public.venue_requests;
 drop policy if exists "Users can see own venue requests" on public.venue_requests;
 drop policy if exists "Moderators can insert venues" on public.venues;
@@ -349,6 +350,17 @@ create policy "Anyone can submit approved facilities" on public.facility_reports
     and length(trim(coalesce(user_name, ''))) between 2 and 40
     and (anonymous_device_id is null or char_length(anonymous_device_id) <= 80)
     and char_length(coalesce(notes, '')) <= 500
+  );
+
+create policy "Anyone can add approved venues" on public.venues
+  for insert with check (
+    status = 'approved'
+    and (created_by is null or created_by = auth.uid())
+    and length(trim(coalesce(name, ''))) between 2 and 80
+    and length(trim(coalesce(municipality, ''))) between 2 and 80
+    and length(trim(coalesce(venue_type, ''))) between 1 and 60
+    and char_length(coalesce(address, '')) <= 160
+    and coalesce(array_length(sport_tags, 1), 0) <= 6
   );
 
 create policy "Anyone logged in can request venue" on public.venue_requests

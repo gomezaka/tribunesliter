@@ -1,12 +1,13 @@
-# Tribunesliter v0.2.12
+# Tribunesliter v0.2.13
 
-Liten designoppdatering på forsiden.
+Nye anlegg kan legges til og vurderes med en gang.
 
-Nytt i v0.2.12:
+Nytt i v0.2.13:
 
 - Vurderinger publiseres direkte med navn/kallenavn.
+- Nye haller/anlegg publiseres direkte fra appen og åpner vurderingsskjemaet etterpå.
 - Moderatorpanelet brukes til ettersjekk og skjuling av synlige vurderinger.
-- Humorbadges teller sjekk-ins, fasilitetsbidrag og anleggsforslag lokalt på enheten.
+- Humorbadges teller sjekk-ins, fasilitetsbidrag og nye anlegg lokalt på enheten.
 - Supabase-policyer håndhever samme modell som klienten.
 
 # Tribunesliter — tribune- og hallapp
@@ -19,8 +20,10 @@ Målet er at folk skal kunne:
 - se Tribunesliter-score og fasiliteter
 - se pakkeliste for anlegget
 - legge inn vurderinger
-- foreslå nye haller/anlegg
+- legge til nye haller/anlegg og vurdere dem
 - skjule upassende vurderinger etter publisering
+
+Etter oppdatering må `docs/supabase-schema.sql` kjøres på nytt i Supabase, fordi RLS-policyen for direkte oppretting av anlegg er ny.
 
 ## Nytt i v0.2.6
 
@@ -154,6 +157,7 @@ Alle kan lese publisert innhold.
 
 Alle kan sende inn direkte:
 
+- `venues` med `status = approved`
 - `reviews` med `status = approved`
 - `facility_reports` med `status = approved`
 
@@ -166,8 +170,8 @@ Moderator/admin kan:
 - avvise vurderinger med `rejected`
 - skjule publiserte vurderinger med `hidden`
 - skjule feil fasilitetsinfo ved å sette fasilitetsrapport til `rejected`
-- godkjenne anleggsforslag og opprette offentlig hall i `venues`
-- avvise anleggsforslag
+- arkivere feil eller dupliserte anlegg
+- godkjenne/avvise eldre anleggsforslag som fortsatt ligger i kø
 
 ## Bygg for publisering
 
