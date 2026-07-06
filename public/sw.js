@@ -1,6 +1,5 @@
-const CACHE_NAME = 'tribunesliter-runtime-v0.2.12-gladrompe-all';
+const CACHE_NAME = 'tribunesliter-runtime-v0.2.13-android-startup';
 const APP_SHELL = [
-  '/',
   '/manifest.webmanifest?v=20260702-gladrompe-all',
   '/favicon.png?v=20260702-gladrompe-all',
   '/apple-touch-icon.png?v=20260702-gladrompe-all',
@@ -26,8 +25,13 @@ async function cacheResponse(request, response) {
   if (!response || !response.ok) return response;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return response;
-  const cache = await caches.open(CACHE_NAME);
-  await cache.put(request, response.clone());
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(request, response.clone());
+  } catch {
+    // Android WebView/Chrome can reject cache writes during first launch.
+    // A successful network response should still reach the app.
+  }
   return response;
 }
 
@@ -55,7 +59,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.pathname.startsWith('/assets/') || /\.(?:css|js|png|jpg|jpeg|webp|svg|ico|webmanifest)$/i.test(url.pathname)) {
+  if (/\.(?:css|js|webmanifest)$/i.test(url.pathname)) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+
+  if (url.pathname.startsWith('/assets/') || /\.(?:png|jpg|jpeg|webp|svg|ico)$/i.test(url.pathname)) {
     event.respondWith(cacheFirst(event.request));
     return;
   }

@@ -400,8 +400,9 @@ const RECENT_VENUES_KEY = 'tribunesliter.recentVenues.v1';
 const INSTALL_HINT_DISMISSED_KEY = 'tribunesliter.installHint.dismissed.v1';
 const BADGE_PROGRESS_KEY = 'tribunesliter.badgeProgress.v1';
 const CONTRIBUTOR_NAME_KEY = 'tribunesliter.contributorName.v1';
+const VENUE_CACHE_KEY = 'tribunesliter.venues.cache.v1';
 const APP_REQUEST_TIMEOUT_MS = 12000;
-const VENUE_REQUEST_TIMEOUT_MS = 45000;
+const VENUE_REQUEST_TIMEOUT_MS = 15000;
 const MAX_COMMENT_LENGTH = 500;
 const MAX_NOTES_LENGTH = 500;
 
@@ -473,6 +474,25 @@ function timeoutAfter(message, ms = APP_REQUEST_TIMEOUT_MS) {
 
 function withTimeout(promise, message, ms) {
   return Promise.race([promise, timeoutAfter(message, ms)]);
+}
+
+function readVenueCache() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const venues = JSON.parse(window.localStorage.getItem(VENUE_CACHE_KEY) || '[]');
+    return Array.isArray(venues) ? venues : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeVenueCache(venues) {
+  if (typeof window === 'undefined' || !Array.isArray(venues) || venues.length === 0) return;
+  try {
+    window.localStorage.setItem(VENUE_CACHE_KEY, JSON.stringify(venues));
+  } catch {
+    // The cache is only a startup convenience.
+  }
 }
 
 function sanitizeBadgeProgress(progress = {}) {
@@ -773,10 +793,29 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     async function boot() {
+      const cachedVenues = readVenueCache();
+      if (cachedVenues.length) {
+        setVenues(cachedVenues);
+        setSelectedVenueId((current) => current || cachedVenues[0]?.id || null);
+        setLoading(false);
+      }
+
+      const sessionPromise = getSession();
+      const venuesPromise = fetchVenues();
+
+      venuesPromise
+        .then((venueRows) => {
+          if (!mounted) return;
+          setVenues(venueRows);
+          writeVenueCache(venueRows);
+          setSelectedVenueId((current) => current || venueRows[0]?.id || null);
+        })
+        .catch(() => {});
+
       try {
         const [sessionResult, venuesResult] = await Promise.allSettled([
-          withTimeout(getSession(), 'Innlogging tok for lang tid. Prøv å oppdatere siden.'),
-          withTimeout(fetchVenues(), 'Klarte ikke hente hele anleggslisten fra Supabase. Sjekk nettverk eller prøv igjen.', VENUE_REQUEST_TIMEOUT_MS),
+          withTimeout(sessionPromise, 'Innlogging tok for lang tid. Prøv å oppdatere siden.'),
+          withTimeout(venuesPromise, 'Klarte ikke hente hele anleggslisten fra Supabase. Sjekk nettverk eller prøv igjen.', VENUE_REQUEST_TIMEOUT_MS),
         ]);
         if (!mounted) return;
 
@@ -794,9 +833,10 @@ export default function App() {
         if (venuesResult.status === 'fulfilled') {
           const venueRows = venuesResult.value;
           setVenues(venueRows);
+          writeVenueCache(venueRows);
           setSelectedVenueId((current) => current || venueRows[0]?.id || null);
         } else {
-          setVenues([]);
+          if (!cachedVenues.length) setVenues([]);
           notices.push(errorMessage(venuesResult.reason));
         }
 
@@ -1043,6 +1083,7 @@ export default function App() {
   async function refreshVenues() {
     const rows = await fetchVenues();
     setVenues(rows);
+    writeVenueCache(rows);
     return rows;
   }
 
