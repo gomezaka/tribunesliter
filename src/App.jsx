@@ -530,6 +530,40 @@ function badgeValue(progress, badge) {
   return Number(safeProgress?.[badge.metric] || 0);
 }
 
+function badgePercent(progress, badge) {
+  const value = badgeValue(progress, badge);
+  return Math.min(100, Math.round((value / badge.target) * 100));
+}
+
+function badgeUnlocked(progress, badge) {
+  return badgeValue(progress, badge) >= badge.target;
+}
+
+function municipalityBadgeCount(progress) {
+  const safeProgress = sanitizeBadgeProgress(progress);
+  const uniqueMunicipalities = Object.entries(safeProgress.municipalityVenueIds || {})
+    .filter(([, ids]) => Array.isArray(ids) && ids.length > 0)
+    .length;
+  if (uniqueMunicipalities > 0) return uniqueMunicipalities;
+  return Object.values(safeProgress.municipalityCounts || {}).filter((value) => Number(value || 0) > 0).length;
+}
+
+function nextBadgeCandidate(progress) {
+  const candidates = BADGE_DEFINITIONS
+    .filter((badge) => !badge.hidden)
+    .map((badge) => ({
+      badge,
+      value: badgeValue(progress, badge),
+      percent: badgePercent(progress, badge),
+    }))
+    .filter(({ badge, value }) => value < badge.target)
+    .sort((a, b) => {
+      if (b.percent !== a.percent) return b.percent - a.percent;
+      return (a.badge.target - a.value) - (b.badge.target - b.value);
+    });
+  return candidates[0] || null;
+}
+
 function mergeBadgeProgress(current, patch = {}) {
   const next = sanitizeBadgeProgress(current);
   Object.entries(patch || {}).forEach(([key, value]) => {
@@ -2241,27 +2275,83 @@ function ThanksView({ venue, onHome, onVenue }) {
 }
 
 function BadgePanel({ progress }) {
+  const [filter, setFilter] = useState('all');
+  const unlockedCount = BADGE_DEFINITIONS.filter((badge) => badgeUnlocked(progress, badge)).length;
+  const municipalityCount = municipalityBadgeCount(progress);
+  const nextBadge = nextBadgeCandidate(progress);
+  const filteredBadges = BADGE_DEFINITIONS.filter((badge) => {
+    const unlocked = badgeUnlocked(progress, badge);
+    const percent = badgePercent(progress, badge);
+    if (filter === 'unlocked') return unlocked;
+    if (filter === 'progress') return !unlocked && !badge.hidden && percent >= 40;
+    if (filter === 'secret') return badge.hidden;
+    return !badge.hidden || unlocked || filter === 'all';
+  });
+
   return (
     <section className="badges-card app-card">
-      <div className="section-title section-title--inside">
-        <h2>Badges</h2>
-        <span>{Number(progress?.checkIns || 0)} sjekk-ins</span>
+      <div className="section-title section-title--inside badges-card__title">
+        <h2>Badgeveggen</h2>
+        <span>{unlockedCount} / {BADGE_DEFINITIONS.length} låst opp</span>
       </div>
-      <div className="badge-grid">
-        {BADGE_DEFINITIONS.map((badge) => {
+
+      <div className="badge-summary-grid">
+        <article className="badge-metric-card">
+          <strong>{Number(progress?.checkIns || 0)}</strong>
+          <span>Sjekk-ins</span>
+        </article>
+        <article className="badge-metric-card">
+          <strong>{municipalityCount}</strong>
+          <span>Kommuner plaget</span>
+        </article>
+      </div>
+
+      {nextBadge && (
+        <article className="next-badge-card">
+          <div className="next-badge-card__icon">
+            <IconGlyph icon={nextBadge.badge.icon} />
+          </div>
+          <div>
+            <strong>Neste: {nextBadge.badge.title}</strong>
+            <p>{nextBadge.badge.description}</p>
+            <span>{Math.max(0, nextBadge.badge.target - nextBadge.value)} igjen før du får den.</span>
+            <i style={{ '--badge-progress': `${nextBadge.percent}%` }} />
+          </div>
+        </article>
+      )}
+
+      <div className="badge-filter-row" role="tablist" aria-label="Badgefilter">
+        <button className={cx(filter === 'all' && 'active')} type="button" onClick={() => setFilter('all')}>Alle</button>
+        <button className={cx(filter === 'unlocked' && 'active')} type="button" onClick={() => setFilter('unlocked')}>Ulåst</button>
+        <button className={cx(filter === 'progress' && 'active')} type="button" onClick={() => setFilter('progress')}>Nesten der</button>
+        <button className={cx(filter === 'secret' && 'active')} type="button" onClick={() => setFilter('secret')}>Hemmelige</button>
+      </div>
+
+      <div className="badge-wall">
+        {filteredBadges.map((badge) => {
           const value = badgeValue(progress, badge);
           const unlocked = value >= badge.target;
-          if (badge.hidden && !unlocked) return null;
-          const percent = Math.min(100, Math.round((value / badge.target) * 100));
+          const percent = badgePercent(progress, badge);
+          const isSecretLocked = badge.hidden && !unlocked;
           return (
-            <article className={cx('badge-card', unlocked && 'badge-card--unlocked', badge.hidden && 'badge-card--secret')} key={badge.id}>
-              <div className="badge-card__icon"><IconGlyph icon={badge.icon} /></div>
-              <div>
-                <strong>{badge.title}</strong>
-                <p>{badge.description}</p>
-                <span>{Math.min(value, badge.target)} / {badge.target}</span>
-                <i style={{ '--badge-progress': `${percent}%` }} />
+            <article
+              className={cx(
+                'badge-tile',
+                unlocked && 'badge-tile--unlocked',
+                !unlocked && 'badge-tile--locked',
+                badge.hidden && 'badge-tile--secret',
+              )}
+              key={badge.id}
+            >
+              <span className="badge-tile__status">
+                {unlocked ? 'Ulåst' : isSecretLocked ? 'Hemmelig' : `${Math.min(value, badge.target)} / ${badge.target}`}
+              </span>
+              <div className="badge-tile__icon">
+                {isSecretLocked ? <span>?</span> : <IconGlyph icon={badge.icon} />}
               </div>
+              <strong>{isSecretLocked ? 'Hemmelig badge' : badge.title}</strong>
+              <small>{isSecretLocked ? 'Avsløres når du låser den opp.' : badge.description}</small>
+              {!unlocked && !isSecretLocked && <i style={{ '--badge-progress': `${percent}%` }} />}
             </article>
           );
         })}
@@ -2278,16 +2368,82 @@ function ProfileView({ user, profile, canModerate, badgeProgress, notice, authBu
 
   return (
     <section className="screen">
-      <div className="profile-card app-card">
-        <p className="eyebrow">Min profil</p>
-        <h1>{user ? 'Du er logget inn' : 'Frivillig profil'}</h1>
-        <p>Velg hvordan navnet ditt vises når du bidrar, og hold oversikt over innsatsen din.</p>
+      <div className="profile-hero app-card">
+        <div className="profile-hero__icon" aria-hidden="true">
+          <InlineRumpeIcon />
+        </div>
+        <div>
+          <p className="eyebrow">Innstillinger</p>
+          <h1>Min tribuneprofil</h1>
+          <p>Logg inn, velg visningsnavn og se hvilke badges du er i ferd med å slite deg til.</p>
+        </div>
       </div>
 
-      <div className="form-card app-card">
-        <p className="eyebrow">Innstillinger</p>
+      {user ? (
+        <div className="account-card account-card--logged-in app-card">
+          <div className="account-card__header">
+            <div>
+              <p className="eyebrow">Konto</p>
+              <h2>Du er logget inn</h2>
+              <p>Vurderinger og badges følger profilen din videre.</p>
+            </div>
+            <span className="account-chip">Aktiv</span>
+          </div>
+          <div className="account-summary-row">
+            <div>
+              <span>Innlogget som</span>
+              <strong>{displayName}</strong>
+            </div>
+            {canModerate && <span className="account-role-pill">Moderator</span>}
+          </div>
+          <div className="account-actions">
+            {canModerate && <button className="primary-action" type="button" onClick={onAdmin}>Åpne moderering</button>}
+            <button className="secondary-action" type="button" onClick={onLogout}>Logg ut</button>
+          </div>
+          {notice && (
+            <button className="auth-status" type="button" onClick={onDismissNotice} role="status" aria-live="polite">
+              {notice}
+            </button>
+          )}
+        </div>
+      ) : (
+        <form className="account-card account-card--guest app-card" onSubmit={(event) => { event.preventDefault(); onLogin({ username, password, authMode }); }}>
+          <div className="account-card__header">
+            <div>
+              <p className="eyebrow">Konto</p>
+              <h2>Logg inn før neste kamp</h2>
+              <p>Da følger vurderinger og badges deg videre, også når mobilen byttes.</p>
+            </div>
+          </div>
+          <div className="auth-toggle" role="tablist" aria-label="Innloggingstype">
+            <button className={cx(authMode === 'login' && 'active')} type="button" onClick={() => setAuthMode('login')}>Logg inn</button>
+            <button className={cx(authMode === 'signup' && 'active')} type="button" onClick={() => setAuthMode('signup')}>Opprett</button>
+          </div>
+          <label>
+            Brukernavn
+            <input value={username} onChange={(event) => setUsername(event.target.value)} type="text" inputMode="text" autoCapitalize="none" autoComplete="username" placeholder="f.eks. tribunekonge" required />
+          </label>
+          <label>
+            Passord
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength="6" required />
+          </label>
+          <p className="micro-copy micro-copy--left">Brukernavn: 3-24 tegn med bokstaver, tall, punktum, bindestrek eller understrek.</p>
+          <button className="primary-action" type="submit" disabled={authBusy}>{authBusy ? (authMode === 'signup' ? 'Oppretter...' : 'Logger inn...') : (authMode === 'signup' ? 'Opprett bruker' : 'Logg inn')}</button>
+          {notice && (
+            <button className="auth-status" type="button" onClick={onDismissNotice} role="status" aria-live="polite">
+              {notice}
+            </button>
+          )}
+        </form>
+      )}
+
+      <div className="settings-card app-card">
+        <div className="section-title section-title--inside">
+          <h2>Navn og bidrag</h2>
+          <span>{user ? 'Innlogget' : 'Demo'}</span>
+        </div>
         <label>
-          Brukernavn i vurderinger
+          Navn i vurderinger
           <input
             value={contributorName}
             onChange={(event) => onContributorNameChange(event.target.value)}
@@ -2299,7 +2455,7 @@ function ProfileView({ user, profile, canModerate, badgeProgress, notice, authBu
             maxLength="40"
           />
         </label>
-        <p className="micro-copy">Brukes automatisk når du sender vurderinger og fasilitetsinfo.</p>
+        <p className="micro-copy micro-copy--left">Dette brukes automatisk når du sender vurderinger og fasilitetsinfo. Du kan endre navnet uten å påvirke innloggingen.</p>
       </div>
 
       <BadgePanel progress={badgeProgress} />
@@ -2316,36 +2472,6 @@ function ProfileView({ user, profile, canModerate, badgeProgress, notice, authBu
             <button className="secondary-action" type="button" onClick={onDismissInstall}>Skjul</button>
           </div>
         </div>
-      )}
-
-      {user ? (
-        <div className="form-card app-card">
-          <p>Innlogget som <strong>{displayName}</strong></p>
-          <button className="secondary-action" type="button" onClick={onLogout}>Logg ut</button>
-          {canModerate && <button className="primary-action" type="button" onClick={onAdmin}>Åpne moderering</button>}
-        </div>
-      ) : (
-        <form className="form-card app-card" onSubmit={(event) => { event.preventDefault(); onLogin({ username, password, authMode }); }}>
-          <div className="auth-toggle" role="tablist" aria-label="Innloggingstype">
-            <button className={cx(authMode === 'login' && 'active')} type="button" onClick={() => setAuthMode('login')}>Logg inn</button>
-            <button className={cx(authMode === 'signup' && 'active')} type="button" onClick={() => setAuthMode('signup')}>Opprett</button>
-          </div>
-          <label>
-            Brukernavn
-            <input value={username} onChange={(event) => setUsername(event.target.value)} type="text" inputMode="text" autoCapitalize="none" autoComplete="username" placeholder="f.eks. tribunekonge" required />
-          </label>
-          <label>
-            Passord
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength="6" required />
-          </label>
-          <p className="micro-copy">Brukernavn: 3-24 tegn med bokstaver, tall, punktum, bindestrek eller understrek.</p>
-          <button className="primary-action" type="submit" disabled={authBusy}>{authBusy ? (authMode === 'signup' ? 'Oppretter...' : 'Logger inn...') : (authMode === 'signup' ? 'Opprett bruker' : 'Logg inn')}</button>
-          {notice && (
-            <button className="auth-status" type="button" onClick={onDismissNotice} role="status" aria-live="polite">
-              {notice}
-            </button>
-          )}
-        </form>
       )}
     </section>
   );
