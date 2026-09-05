@@ -5,6 +5,7 @@ import {
   createVenue,
   fetchBadgeContributions,
   fetchPendingModeration,
+  fetchOwnedReviewForVenue,
   fetchReviews,
   fetchVenues,
   getDemoUser,
@@ -19,6 +20,7 @@ import {
   signUpWithUsernamePassword,
   submitFacilityReport,
   submitReview,
+  updateReview,
 } from './lib/api';
 
 const ICON_VERSION = '20260702-gladrompe-all';
@@ -304,7 +306,7 @@ function makeEmptyReview() {
     kiosk_items: kiosk.items,
     kiosk_payment: kiosk.payment,
     kiosk_queue: kiosk.queue,
-    include_facilities: true,
+    include_facilities: false,
   };
 }
 
@@ -347,7 +349,28 @@ function makeReviewFormForVenue(venue, current = makeEmptyReview()) {
     tribunesliter_minutes: Math.max(5, Math.min(90, Math.round(seatScore * 15))),
     temperature_score: 3,
     accessibility_score: 3,
-    include_facilities: true,
+    include_facilities: false,
+  };
+}
+
+function makeReviewFormFromOwnedReview(venue, review, contributorName = '') {
+  const base = makeReviewFormForVenue(venue, { ...makeEmptyReview(), user_name: contributorName });
+  if (!review) return base;
+  return {
+    ...base,
+    venue_id: venue?.id || review.venue_id || '',
+    venue_municipality: venue?.municipality || '',
+    user_name: cleanContributorName(review.user_name) || contributorName,
+    tribunesliter_minutes: Number(review.tribunesliter_minutes || base.tribunesliter_minutes),
+    comfort_score: Number(review.comfort_score || base.comfort_score),
+    view_score: Number(review.view_score || base.view_score),
+    temperature_score: Number(review.temperature_score || 3),
+    accessibility_score: Number(review.accessibility_score || 3),
+    event_type: review.event_type || 'Kamp',
+    visit_date: String(review.visit_date || new Date().toISOString().slice(0, 10)).slice(0, 10),
+    comment: review.comment || '',
+    facility_seat_comfort: Number(review.comfort_score || base.facility_seat_comfort),
+    facility_view_quality: Number(review.view_score || base.facility_view_quality),
   };
 }
 
@@ -863,6 +886,8 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [mode, setMode] = useState(hasSupabaseConfig ? 'supabase' : 'demo');
   const [reviewForm, setReviewForm] = useState(makeEmptyReview);
+  const [editingReviewId, setEditingReviewId] = useState(null);
+  const [reviewEditLoading, setReviewEditLoading] = useState(false);
   const [facilityForm, setFacilityForm] = useState(() => makeFacilityReportFromVenue(null));
   const [venueRequest, setVenueRequest] = useState(emptyVenueRequest);
   const [moderation, setModeration] = useState({ reviews: [], approvedReviews: [], facilityReports: [], venueRequests: [] });
@@ -1075,10 +1100,42 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedVenue?.id) return;
+    let mounted = true;
     withTimeout(fetchReviews(selectedVenue.id), 'Klarte ikke hente vurderinger akkurat nå.')
-      .then(setReviews)
-      .catch((error) => setNotice(errorMessage(error)));
+      .then((rows) => { if (mounted) setReviews(rows); })
+      .catch((error) => {
+        console.warn('Could not refresh public reviews:', error);
+        if (mounted) setReviews([]);
+      });
+    return () => { mounted = false; };
   }, [selectedVenue?.id]);
+
+  useEffect(() => {
+    if (view !== 'rate' || !reviewForm.venue_id) {
+      setEditingReviewId(null);
+      setReviewEditLoading(false);
+      return;
+    }
+    let mounted = true;
+    const venueId = reviewForm.venue_id;
+    const venue = venues.find((item) => item.id === venueId);
+    setReviewEditLoading(true);
+    fetchOwnedReviewForVenue(venueId)
+      .then((ownedReview) => {
+        if (!mounted || reviewForm.venue_id !== venueId) return;
+        setEditingReviewId(ownedReview?.id || null);
+        setReviewForm(makeReviewFormFromOwnedReview(venue, ownedReview, effectiveContributorName()));
+      })
+      .catch((error) => {
+        console.warn('Could not check owned review:', error);
+        if (mounted) {
+          setEditingReviewId(null);
+          if (/Supabase-migreringen/i.test(errorMessage(error))) setNotice(errorMessage(error));
+        }
+      })
+      .finally(() => { if (mounted) setReviewEditLoading(false); });
+    return () => { mounted = false; };
+  }, [view, reviewForm.venue_id, user?.id]);
 
   useEffect(() => {
     if (loading) return;
@@ -1100,14 +1157,11 @@ export default function App() {
     if (venueId) setSelectedVenueId(venueId);
     if (nextView === 'rate' && venueId) {
       const venue = venues.find((item) => item.id === venueId);
-      setReviewForm((current) => ({
-        ...current,
-        venue_id: venueId,
-        venue_municipality: venue?.municipality || current.venue_municipality,
-        user_name: cleanContributorName(current.user_name) || effectiveContributorName(),
-      }));
+      setEditingReviewId(null);
+      setReviewForm(makeReviewFormForVenue(venue, { ...makeEmptyReview(), user_name: effectiveContributorName() }));
     }
     if (nextView === 'rate' && !venueId) {
+      setEditingReviewId(null);
       setReviewForm({ ...makeEmptyReview(), user_name: effectiveContributorName() });
     }
     if (nextView === 'venue' && venueId) {
@@ -1241,21 +1295,45 @@ export default function App() {
       return;
     }
     if (!userName) {
-      setNotice('Skriv inn navn eller kallenavn før du sender vurderingen.');
+      setNotice('Skriv inn navn eller kallenavn før du lagrer vurderingen.');
       return;
     }
 
     try {
       const targetVenue = venues.find((venue) => venue.id === targetVenueId) || selectedVenue;
-      const payload = { ...reviewForm, user_name: userName, venue_id: targetVenueId, venue_municipality: targetVenue?.municipality || reviewForm.venue_municipality };
-      await submitReview(payload);
-      await refreshVenues();
-      setReviews(await fetchReviews(targetVenueId));
+      const payload = { ...reviewForm, user_name: userName, venue_id: targetVenueId, venue_municipality: targetVenue?.municipality || reviewForm.venue_municipality, venue_name: targetVenue?.name || '' };
+      const wasEditing = Boolean(editingReviewId);
+      const savedReview = wasEditing
+        ? await updateReview(editingReviewId, payload)
+        : await submitReview(payload);
+
       setSelectedVenueId(targetVenueId);
-      addBadgeProgress(buildReviewBadgeProgressPatch(payload, targetVenue));
+      if (!wasEditing) addBadgeProgress(buildReviewBadgeProgressPatch(payload, targetVenue));
+
+      const [venuesResult, reviewsResult] = await Promise.allSettled([
+        refreshVenues(),
+        fetchReviews(targetVenueId),
+      ]);
+      if (reviewsResult.status === 'fulfilled') {
+        setReviews(reviewsResult.value);
+      } else {
+        console.warn('Review saved, but public review refresh failed:', reviewsResult.reason);
+        setReviews((current) => {
+          const withoutSaved = current.filter((review) => review.id !== savedReview?.id && review.id !== editingReviewId);
+          return savedReview?.id ? [savedReview, ...withoutSaved] : withoutSaved;
+        });
+      }
+      if (venuesResult.status === 'rejected') console.warn('Review saved, but venue refresh failed:', venuesResult.reason);
+
       setReviewForm({ ...makeEmptyReview(), user_name: effectiveContributorName() });
-      setNotice('Vurderingen er publisert. Takk for bidraget!');
-      go('thanks', targetVenueId);
+      setEditingReviewId(null);
+      if (wasEditing) {
+        go('venue', targetVenueId);
+        setNotice(savedReview?.facilityWarning ? `Vurderingen er oppdatert. ${savedReview.facilityWarning}` : 'Vurderingen er oppdatert.');
+      } else {
+        go('thanks', targetVenueId);
+        if (savedReview?.facilityWarning) setNotice(`Vurderingen er publisert. ${savedReview.facilityWarning}`);
+      }
     } catch (error) {
       setNotice(errorMessage(error));
     }
@@ -1342,11 +1420,12 @@ export default function App() {
   }
 
   const isDetail = ['venue', 'rate', 'newVenue', 'admin', 'thanks'].includes(view);
+  const ratingMode = view === 'rate';
 
   return (
     <main className="app-shell">
-      <section className={cx('phone-frame', isDetail && 'phone-frame--detail')} aria-label="Tribunesliter mobilapp">
-        <Header
+      <section className={cx('phone-frame', isDetail && 'phone-frame--detail', ratingMode && 'phone-frame--rating')} aria-label="Tribunesliter mobilapp">
+        {!ratingMode && <Header
           venues={venues}
           query={query}
           onQuery={setQuery}
@@ -1354,7 +1433,7 @@ export default function App() {
           onMap={() => go('explore')}
           onSearch={() => go('search')}
           onVenue={(id) => go('venue', id)}
-        />
+        />}
 
         {notice && view !== 'profile' && (
           <button className="notice" type="button" onClick={() => setNotice('')}>
@@ -1438,6 +1517,8 @@ export default function App() {
                 setForm={setReviewForm}
                 onSubmit={handleSubmitReview}
                 onNewVenue={(draft) => openNewVenueForm(draft)}
+                editing={Boolean(editingReviewId)}
+                editLoading={reviewEditLoading}
                 onBack={() => go(reviewForm.venue_id && selectedVenue ? 'venue' : 'home', reviewForm.venue_id ? selectedVenue?.id : undefined)}
               />
             )}
@@ -1491,7 +1572,7 @@ export default function App() {
           </>
         )}
 
-        <BottomNav active={view} onNav={go} selectedVenue={selectedVenue} savedCount={savedVenueIds.length} />
+        {!ratingMode && <BottomNav active={view} onNav={go} selectedVenue={selectedVenue} savedCount={savedVenueIds.length} />}
       </section>
     </main>
   );
@@ -1977,31 +2058,51 @@ function ReviewCard({ review }) {
   );
 }
 
-function RateView({ venues, selectedVenue, form, setForm, onSubmit, onNewVenue, onBack }) {
+function RateView({ venues, selectedVenue, form, setForm, onSubmit, onNewVenue, onBack, editing = false, editLoading = false }) {
   const [venueSearch, setVenueSearch] = useState('');
-  const [kioskOpen, setKioskOpen] = useState(false);
+  const [openSection, setOpenSection] = useState('');
   const selectedVenueId = form.venue_id || selectedVenue?.id || '';
   const selectedVenueFromForm = venues.find((venue) => venue.id === selectedVenueId);
   const filteredVenues = useMemo(() => {
     const term = venueSearch.trim().toLowerCase();
-    return venues.filter((venue) => !term || [venue.name, venue.municipality, venue.address, venue.venue_type, ...(venue.sport_tags || [])].filter(Boolean).join(' ').toLowerCase().includes(term)).sort((a,b) => a.name.localeCompare(b.name,'nb'));
+    if (!term) return venues.slice().sort((a, b) => a.name.localeCompare(b.name, 'nb')).slice(0, 8);
+    return venues
+      .filter((venue) => [venue.name, venue.municipality, venue.address, venue.venue_type, ...(venue.sport_tags || [])]
+        .filter(Boolean).join(' ').toLowerCase().includes(term))
+      .sort((a, b) => a.name.localeCompare(b.name, 'nb'))
+      .slice(0, 8);
   }, [venues, venueSearch]);
 
   function update(key, value) { setForm((current) => ({ ...current, [key]: value })); }
   function updateVenue(value) {
     const venue = venues.find((item) => item.id === value);
-    setForm((current) => venue ? makeReviewFormForVenue(venue, current) : { ...current, venue_id: '' });
+    if (!venue) {
+      setForm({ ...makeEmptyReview(), user_name: form.user_name || '' });
+      setVenueSearch('');
+      return;
+    }
+    setForm(makeReviewFormForVenue(venue, { ...makeEmptyReview(), user_name: form.user_name || '' }));
+    setVenueSearch('');
+    setOpenSection('');
   }
   function updateRating(key, facilityKey, value) {
-    setForm((current) => ({ ...current, [key]: value, [facilityKey]: value, tribunesliter_minutes: key === 'comfort_score' ? Math.max(5, Math.min(90, Number(value) * 15)) : current.tribunesliter_minutes, include_facilities: true }));
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+      [facilityKey]: value,
+      tribunesliter_minutes: key === 'comfort_score' ? Math.max(5, Math.min(90, Number(value) * 15)) : current.tribunesliter_minutes,
+    }));
+  }
+  function updatePractical(key, value) {
+    setForm((current) => ({ ...current, [key]: value, include_facilities: true }));
   }
   function updateKiosk(patch) {
     setForm((current) => {
       const next = {
-        status: patch.kiosk_status_level ?? (current.kiosk_status_level || 'Sporadisk'),
+        status: patch.kiosk_status_level ?? (current.kiosk_status_level || ''),
         items: patch.kiosk_items ?? current.kiosk_items ?? [],
-        payment: patch.kiosk_payment ?? (current.kiosk_payment || 'Vipps'),
-        queue: patch.kiosk_queue ?? (current.kiosk_queue || 'Litt kø'),
+        payment: patch.kiosk_payment ?? (current.kiosk_payment || ''),
+        queue: patch.kiosk_queue ?? (current.kiosk_queue || ''),
       };
       return { ...current, ...patch, facility_kiosk_status: encodeKioskDetails(next), include_facilities: true };
     });
@@ -2010,38 +2111,102 @@ function RateView({ venues, selectedVenue, form, setForm, onSubmit, onNewVenue, 
     const items = form.kiosk_items || [];
     updateKiosk({ kiosk_items: items.includes(item) ? items.filter((value) => value !== item) : [...items, item] });
   }
+  function toggleSection(section) {
+    setOpenSection((current) => current === section ? '' : section);
+  }
+
+  if (!selectedVenueFromForm) {
+    return (
+      <section className="screen detail-screen rating-overhaul-screen rating-overhaul-screen--pick">
+        <FormHeader title="Vurder" step="Finn anlegg" onBack={onBack} />
+        <div className="rate-pick-intro">
+          <span className="eyebrow">Steg 1</span>
+          <h1>Hvor var du?</h1>
+          <p>Finn banen eller hallen. Det er det eneste søket på denne skjermen.</p>
+        </div>
+        <label className="rate-venue-search">
+          <Icon name="search" />
+          <input autoFocus value={venueSearch} onChange={(event) => setVenueSearch(event.target.value)} placeholder="Søk etter bane, hall eller sted" aria-label="Søk etter anlegg" />
+        </label>
+        <div className="rate-venue-results" role="listbox" aria-label="Anlegg">
+          {filteredVenues.map((venue) => (
+            <button type="button" key={venue.id} onClick={() => updateVenue(venue.id)}>
+              <span className="mini-score">{formatVenueScore(venue)}</span>
+              <span><strong>{venue.name}</strong><small>{venue.municipality} · {primarySport(venue)}</small></span>
+              <i>›</i>
+            </button>
+          ))}
+          {venueSearch.trim() && filteredVenues.length === 0 && <p>Ingen anlegg matcher «{venueSearch}».</p>}
+        </div>
+        <button type="button" className="rate-add-venue" onClick={() => onNewVenue({ name: venueSearch })}>+ Legg til nytt anlegg</button>
+      </section>
+    );
+  }
+
+  const parkingSummary = form.facility_parking || 'Valgfritt';
+  const kioskSummary = (form.kiosk_status_level || (form.kiosk_items || []).length) ? (form.kiosk_status_level || 'Info lagt til') : 'Valgfritt';
+  const commentSummary = form.comment ? 'Kommentar lagt til' : 'Valgfritt';
 
   return (
-    <section className="screen detail-screen rating-overhaul-screen">
-      <FormHeader title="Ny vurdering" onBack={onBack} />
-      <form className="rating-overhaul-form" onSubmit={onSubmit}>
-        <div className="rating-overhaul-title"><div className="rating-overhaul-icon"><InlineRumpeIcon /></div><div><h1>Hvordan var tribunen?</h1><p>{selectedVenueFromForm?.name || selectedVenue?.name || 'Velg et anlegg'}</p></div></div>
-        {!selectedVenueFromForm && (
-          <section className="field-card-overhaul"><label>Anlegg<input value={venueSearch} onChange={(event)=>setVenueSearch(event.target.value)} placeholder="Søk anlegg" /></label><select value={selectedVenueId} onChange={(event)=>updateVenue(event.target.value)} required><option value="">Velg anlegg</option>{filteredVenues.map((venue)=><option key={venue.id} value={venue.id}>{venue.name} · {venue.municipality}</option>)}</select><button type="button" className="inline-add-venue" onClick={()=>onNewVenue({name:venueSearch})}>+ Legg til nytt anlegg</button></section>
-        )}
-        <p className="lead">Bare to ting rates. Resten er praktisk info og påvirker ikke tribunescore.</p>
+    <section className="screen detail-screen rating-overhaul-screen rating-overhaul-screen--form">
+      <FormHeader title={editing ? 'Rediger vurdering' : 'Ny vurdering'} step="Sitteplass + utsikt" onBack={onBack} />
+      <form className="rating-overhaul-form rating-overhaul-form--clean" onSubmit={onSubmit}>
+        <div className="rate-selected-venue">
+          <span><strong>{selectedVenueFromForm.name}</strong><small>{selectedVenueFromForm.municipality} · {primarySport(selectedVenueFromForm)}</small></span>
+          <button type="button" onClick={() => updateVenue('')}>Bytt</button>
+        </div>
 
-        <HumorRating icon={RUMPE_ICON} label="Sitteplasser" scale="seating" value={Number(form.comfort_score)} onChange={(value)=>updateRating('comfort_score','facility_seat_comfort',value)} />
-        <HumorRating icon="👀" label="Utsikt" scale="view" value={Number(form.view_score)} onChange={(value)=>updateRating('view_score','facility_view_quality',value)} />
+        <div className="rating-overhaul-title rating-overhaul-title--clean">
+          <div className="rating-overhaul-icon"><InlineRumpeIcon /></div>
+          <div><span className="eyebrow">{editing ? 'Din vurdering' : 'Steg 2'}</span><h1>Hvordan var tribunen?</h1><p>Kun sitteplass og utsikt teller i tribunescore.</p></div>
+        </div>
 
-        <section className="field-card-overhaul"><strong>🅿️ Parkering</strong><p>Praktisk info – ikke del av scoren.</p><div className="choice-row-overhaul">{PARKING_OPTIONS.map((option)=><button type="button" className={cx(parkingLabel(form.facility_parking)===option && 'selected')} key={option} onClick={()=>update('facility_parking',option)}>{option}</button>)}</div></section>
+        {editLoading && <div className="rate-edit-loading">Sjekker om du har vurdert stedet tidligere…</div>}
+        {editing && !editLoading && <div className="rate-edit-banner">Du har vurdert dette stedet før. Endringene lagres i samme anmeldelse.</div>}
 
-        <section className={cx('kiosk-editor-overhaul', kioskOpen && 'open')}>
-          <button className="kiosk-editor-toggle" type="button" onClick={()=>setKioskOpen((value)=>!value)}><span><strong>🧇 Kiosk</strong><small>Egen utvidet meny</small></span><b>{kioskOpen ? 'Lukk −' : 'Åpne +'}</b></button>
-          {kioskOpen && <div className="kiosk-editor-content">
-            <ChoiceRow label="Status" options={KIOSK_STATUS_OPTIONS} value={form.kiosk_status_level} onChange={(value)=>updateKiosk({kiosk_status_level:value})} />
-            <div className="kiosk-checks"><label>Hva får du kjøpt?</label><div>{KIOSK_ITEM_OPTIONS.map(([name,emoji])=><button type="button" key={name} className={cx((form.kiosk_items||[]).includes(name) && 'selected')} onClick={()=>toggleKioskItem(name)}>{emoji} {name}</button>)}</div></div>
-            <ChoiceRow label="Betaling" options={KIOSK_PAYMENT_OPTIONS} value={form.kiosk_payment} onChange={(value)=>updateKiosk({kiosk_payment:value})} />
-            <ChoiceRow label="Kø i pausen" options={KIOSK_QUEUE_OPTIONS} value={form.kiosk_queue} onChange={(value)=>updateKiosk({kiosk_queue:value})} />
-            <label className="overhaul-textarea-label">Kiosknotat<textarea rows="3" value={form.facility_notes || ''} onChange={(event)=>update('facility_notes',event.target.value)} placeholder="F.eks. åpner bare ved A-lagskamp, gode vafler…" maxLength={MAX_NOTES_LENGTH} /></label>
-          </div>}
+        <HumorRating icon={RUMPE_ICON} label="Sitteplasser" scale="seating" value={Number(form.comfort_score)} onChange={(value) => updateRating('comfort_score', 'facility_seat_comfort', value)} />
+        <HumorRating icon="👀" label="Utsikt" scale="view" value={Number(form.view_score)} onChange={(value) => updateRating('view_score', 'facility_view_quality', value)} />
+
+        <div className="rate-optional-stack">
+          <OptionalRateSection title="🅿️ Parkering" summary={parkingSummary} open={openSection === 'parking'} onToggle={() => toggleSection('parking')}>
+            <div className="choice-row-overhaul">{PARKING_OPTIONS.map((option) => <button type="button" className={cx(parkingLabel(form.facility_parking) === option && 'selected')} key={option} onClick={() => updatePractical('facility_parking', option)}>{option}</button>)}</div>
+          </OptionalRateSection>
+
+          <OptionalRateSection title="🧇 Kiosk" summary={kioskSummary} open={openSection === 'kiosk'} onToggle={() => toggleSection('kiosk')} tone="warm">
+            <div className="kiosk-editor-content kiosk-editor-content--embedded">
+              <ChoiceRow label="Status" options={KIOSK_STATUS_OPTIONS} value={form.kiosk_status_level} onChange={(value) => updateKiosk({ kiosk_status_level: value })} />
+              <div className="kiosk-checks"><label>Hva får du kjøpt?</label><div>{KIOSK_ITEM_OPTIONS.map(([name, emoji]) => <button type="button" key={name} className={cx((form.kiosk_items || []).includes(name) && 'selected')} onClick={() => toggleKioskItem(name)}>{emoji} {name}</button>)}</div></div>
+              <ChoiceRow label="Betaling" options={KIOSK_PAYMENT_OPTIONS} value={form.kiosk_payment} onChange={(value) => updateKiosk({ kiosk_payment: value })} />
+              <ChoiceRow label="Kø i pausen" options={KIOSK_QUEUE_OPTIONS} value={form.kiosk_queue} onChange={(value) => updateKiosk({ kiosk_queue: value })} />
+              <label className="overhaul-textarea-label">Kiosknotat<textarea rows="3" value={form.facility_notes || ''} onChange={(event) => updatePractical('facility_notes', event.target.value)} placeholder="F.eks. åpner bare ved A-lagskamp, gode vafler…" maxLength={MAX_NOTES_LENGTH} /></label>
+            </div>
+          </OptionalRateSection>
+
+          <OptionalRateSection title="💬 Kommentar" summary={commentSummary} open={openSection === 'comment'} onToggle={() => toggleSection('comment')}>
+            <label className="overhaul-textarea-label">Hva bør neste tribunesliter vite?<textarea rows="4" value={form.comment} onChange={(event) => update('comment', event.target.value)} placeholder="Kort og nyttig – resten er valgfritt." maxLength={MAX_COMMENT_LENGTH} /></label>
+          </OptionalRateSection>
+        </div>
+
+        <section className="rate-visit-details">
+          <div><label>Type besøk<select value={form.event_type} onChange={(event) => update('event_type', event.target.value)}><option>Kamp</option><option>Cup</option><option>Trening</option><option>Turnering</option><option>Annet</option></select></label><label>Dato<input type="date" value={form.visit_date} max={new Date().toISOString().slice(0, 10)} onChange={(event) => update('visit_date', event.target.value)} /></label></div>
+          <label>Navn eller kallenavn<input value={form.user_name} onChange={(event) => update('user_name', event.target.value)} placeholder="F.eks. tribunekonge" maxLength="40" required /></label>
         </section>
 
-        <section className="field-card-overhaul"><label className="overhaul-textarea-label">💬 Kommentar<textarea rows="4" value={form.comment} onChange={(event)=>update('comment',event.target.value)} placeholder="Hva bør neste tribunesliter vite?" maxLength={MAX_COMMENT_LENGTH} /></label></section>
-        <section className="rating-meta-overhaul"><label>Type besøk<select value={form.event_type} onChange={(event)=>update('event_type',event.target.value)}><option>Kamp</option><option>Cup</option><option>Trening</option><option>Turnering</option><option>Annet</option></select></label><label>Dato<input type="date" value={form.visit_date} max={new Date().toISOString().slice(0,10)} onChange={(event)=>update('visit_date',event.target.value)} /></label></section>
-        <label className="overhaul-name-label">Navn eller kallenavn<input value={form.user_name} onChange={(event)=>update('user_name',event.target.value)} placeholder="F.eks. tribunekonge" maxLength="40" required /></label>
-        <button className="submit-overhaul" type="submit">Send vurdering</button>
+        <div className="rating-savebar">
+          <button className="submit-overhaul" type="submit" disabled={editLoading}>{editLoading ? 'Sjekker tidligere vurdering…' : editing ? 'Lagre endringer' : 'Send vurdering'}</button>
+        </div>
       </form>
+    </section>
+  );
+}
+
+function OptionalRateSection({ title, summary, open, onToggle, children, tone = '' }) {
+  return (
+    <section className={cx('rate-optional', open && 'open', tone && `rate-optional--${tone}`)}>
+      <button className="rate-optional__toggle" type="button" onClick={onToggle} aria-expanded={open}>
+        <span><strong>{title}</strong><small>{summary}</small></span><b>{open ? '−' : '+'}</b>
+      </button>
+      {open && <div className="rate-optional__content">{children}</div>}
     </section>
   );
 }

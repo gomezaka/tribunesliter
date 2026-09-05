@@ -1931,3 +1931,276 @@ body {
   .rating-overhaul-form .humor-rating__options strong { display: none; }
   .rating-overhaul-form .humor-rating__options button { min-height: 54px; }
 }
+
+/* v2.14 – konsistent vurderingsflyt og responsiv mobilvisning */
+.brand-row-overhaul {
+  position: relative;
+  justify-content: center;
+  min-height: 52px;
+}
+.brand-button--compact {
+  width: 150px;
+  margin: 0 auto;
+  justify-content: center;
+}
+.region-chip {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.phone-frame--rating {
+  padding-bottom: 0;
+  min-height: 100dvh;
+  height: auto;
+}
+.rating-overhaul-screen {
+  width: 100%;
+  min-width: 0;
+  min-height: 100dvh;
+  padding: 0 14px 0;
+  overflow: visible;
+}
+.rating-overhaul-screen .form-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin: 0 -14px 14px;
+  padding: calc(12px + env(safe-area-inset-top)) 14px 12px;
+  background: rgba(255,255,255,.97);
+  border-bottom: 1px solid var(--overhaul-line);
+  backdrop-filter: blur(14px);
+}
+.rate-pick-intro {
+  display: grid;
+  gap: 6px;
+  padding: 2px 2px 10px;
+}
+.rate-pick-intro h1 {
+  margin: 0;
+  font: 900 clamp(25px,7vw,31px)/1 Archivo;
+  letter-spacing: -.035em;
+}
+.rate-pick-intro p {
+  margin: 0;
+  color: var(--overhaul-muted);
+  font: 700 12px/1.45 Manrope;
+}
+.rate-venue-search {
+  min-height: 52px;
+  border: 1px solid var(--overhaul-line);
+  border-radius: 17px;
+  background: var(--overhaul-surface-2);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 13px;
+}
+.rate-venue-search svg {
+  width: 20px;
+  flex: 0 0 auto;
+  color: #66746b;
+}
+.rate-venue-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--overhaul-ink);
+  font: 750 13px/1 Manrope;
+}
+.rate-venue-results {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+.rate-venue-results > button {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--overhaul-line);
+  border-radius: 16px;
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 42px minmax(0,1fr) auto;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  color: var(--overhaul-ink);
+}
+.rate-venue-results .mini-score {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: var(--overhaul-green-soft);
+  color: var(--overhaul-green-dark);
+  display: grid;
+  place-items: center;
+  font: 900 12px/1 Archivo;
+}
+.rate-venue-results > button > span:nth-child(2) { min-width: 0; display: grid; gap: 3px; }
+.rate-venue-results strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 900 13px/1.1 Archivo; }
+.rate-venue-results small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--overhaul-muted); font: 700 10.5px/1.25 Manrope; }
+.rate-venue-results i { font: 900 22px/1 Archivo; font-style: normal; color: #97a39b; }
+.rate-venue-results > p { margin: 8px 2px; color: var(--overhaul-muted); font: 700 12px/1.4 Manrope; }
+.rate-add-venue {
+  width: 100%;
+  min-height: 46px;
+  margin: 10px 0 calc(24px + env(safe-area-inset-bottom));
+  border: 1px dashed #b9c9bf;
+  border-radius: 15px;
+  background: #fff;
+  color: var(--overhaul-green-dark);
+  font: 850 12px/1 Manrope;
+}
+
+.rating-overhaul-form--clean {
+  width: 100%;
+  min-width: 0;
+  gap: 12px;
+  padding-bottom: 0;
+}
+.rate-selected-venue {
+  border: 1px solid var(--overhaul-line);
+  border-radius: 17px;
+  background: var(--overhaul-surface-2);
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rate-selected-venue > span { min-width: 0; display: grid; gap: 3px; }
+.rate-selected-venue strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 900 13px/1.1 Archivo; }
+.rate-selected-venue small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--overhaul-muted); font: 700 10.5px/1.25 Manrope; }
+.rate-selected-venue button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 11px;
+  background: #fff;
+  color: var(--overhaul-green-dark);
+  padding: 8px 10px;
+  font: 850 10px/1 Manrope;
+}
+.rating-overhaul-title--clean {
+  align-items: flex-start;
+  padding: 4px 1px 2px;
+}
+.rating-overhaul-title--clean .eyebrow { display: block; margin-bottom: 4px; }
+.rating-overhaul-title--clean h1 { font-size: clamp(21px,6vw,26px); }
+.rate-edit-loading,
+.rate-edit-banner {
+  border-radius: 14px;
+  padding: 10px 12px;
+  font: 800 11px/1.4 Manrope;
+}
+.rate-edit-loading { background: var(--overhaul-surface-2); color: var(--overhaul-muted); }
+.rate-edit-banner { background: var(--overhaul-green-soft); color: var(--overhaul-green-dark); }
+
+.rating-overhaul-form--clean .humor-rating {
+  min-width: 0;
+  overflow: hidden;
+}
+.rating-overhaul-form--clean .humor-rating__options {
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(5,minmax(0,1fr));
+  overflow: visible;
+}
+.rating-overhaul-form--clean .humor-rating__options button {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+.rating-overhaul-form--clean .humor-rating__options strong {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.rate-optional-stack { display: grid; gap: 8px; }
+.rate-optional {
+  border: 1px solid var(--overhaul-line);
+  border-radius: 17px;
+  background: #fff;
+  overflow: hidden;
+}
+.rate-optional.open { border-color: #cbd8cf; }
+.rate-optional--warm.open { border-color: #efcfaa; }
+.rate-optional__toggle {
+  width: 100%;
+  min-height: 58px;
+  border: 0;
+  background: #fff;
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  color: var(--overhaul-ink);
+}
+.rate-optional--warm .rate-optional__toggle { background: #fffaf4; }
+.rate-optional__toggle > span { min-width: 0; display: grid; gap: 4px; }
+.rate-optional__toggle strong { font: 900 13px/1 Archivo; }
+.rate-optional__toggle small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--overhaul-muted); font: 700 10px/1.2 Manrope; }
+.rate-optional__toggle b { flex: 0 0 auto; color: var(--overhaul-green-dark); font: 900 20px/1 Archivo; }
+.rate-optional__content { padding: 12px; border-top: 1px solid var(--overhaul-line); }
+.rate-optional--warm .rate-optional__content { border-top-color: #f2e1cd; }
+.kiosk-editor-content--embedded { padding: 0; border: 0; }
+
+.rate-visit-details {
+  border: 1px solid var(--overhaul-line);
+  border-radius: 17px;
+  background: var(--overhaul-surface-2);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+.rate-visit-details > div { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rate-visit-details label { min-width: 0; display: grid; gap: 6px; color: var(--overhaul-ink); font: 850 10.5px/1.2 Manrope; }
+.rate-visit-details input,
+.rate-visit-details select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--overhaul-line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  color: var(--overhaul-ink);
+  font: 700 12px/1.2 Manrope;
+}
+.rating-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 25;
+  margin: 2px -14px 0;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, #fff 72%, rgba(255,255,255,.92));
+  border-top: 1px solid rgba(223,230,223,.9);
+}
+.rating-savebar .submit-overhaul { width: 100%; min-height: 52px; }
+
+@media (max-width: 365px) {
+  .brand-button--compact { width: 132px; }
+  .rating-overhaul-screen { padding-inline: 10px; }
+  .rating-overhaul-screen .form-header { margin-inline: -10px; padding-inline: 10px; }
+  .rating-savebar { margin-inline: -10px; padding-inline: 10px; }
+  .rating-overhaul-form--clean .humor-rating { padding: 10px; }
+  .rating-overhaul-form--clean .humor-rating__options { gap: 4px; }
+  .rating-overhaul-form--clean .humor-rating__options button { min-height: 52px; padding: 6px 2px; }
+  .rating-overhaul-form--clean .humor-rating__options strong { display: none; }
+  .rate-visit-details > div { grid-template-columns: 1fr; }
+}
+
+@media (min-width: 700px) {
+  .phone-frame--rating {
+    min-height: calc(100vh - 56px);
+    height: calc(100vh - 56px);
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .rating-overhaul-screen { min-height: 100%; }
+}

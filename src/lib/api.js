@@ -409,10 +409,17 @@ export async function fetchVenues() {
     return result;
   }
 
-  const [coordinateRows, scoreRows] = await Promise.all([
+  const [coordinateResult, scoreResult] = await Promise.allSettled([
     fetchPaged('venues', 'id, latitude, longitude', (query) => query.eq('status', 'approved').order('id', { ascending: true })),
     fetchPaged('approved_reviews_public', 'venue_id, comfort_score, view_score', (query) => query.order('venue_id', { ascending: true })),
   ]);
+  const coordinateRows = coordinateResult.status === 'fulfilled' ? coordinateResult.value : [];
+  let scoreRows = scoreResult.status === 'fulfilled' ? scoreResult.value : [];
+  if (coordinateResult.status === 'rejected') console.warn('Could not enrich venues with coordinates:', coordinateResult.reason);
+  if (scoreResult.status === 'rejected') {
+    console.warn('Could not enrich venues with review scores:', scoreResult.reason);
+    scoreRows = [];
+  }
   const coordinates = new Map(coordinateRows.map((row) => [row.id, row]));
   const scoreBuckets = new Map();
   for (const row of scoreRows) {
@@ -505,14 +512,45 @@ export async function fetchReviews(venueId) {
       .sort((a, b) => String(b.visit_date).localeCompare(String(a.visit_date)));
   }
 
-  const { data, error } = await supabase
+  const publicResult = await supabase
     .from('approved_reviews_public')
     .select('*')
     .eq('venue_id', venueId)
     .order('visit_date', { ascending: false });
 
-  if (error) throw error;
-  return data.map(normalizeReview);
+  if (!publicResult.error) return publicResult.data.map(normalizeReview);
+
+  console.warn('Could not read approved_reviews_public. Falling back to public review RPC:', publicResult.error);
+  const fallbackResult = await supabase.rpc('get_public_reviews_for_venue', { p_venue_id: venueId });
+  if (fallbackResult.error) throw publicResult.error;
+  return (fallbackResult.data || []).map(normalizeReview);
+}
+
+export async function fetchOwnedReviewForVenue(venueId) {
+  if (!venueId) return null;
+  const deviceId = getAnonymousDeviceId();
+
+  if (!hasSupabaseConfig) {
+    const demoUser = getDemoUser();
+    return readLocal(LOCAL_REVIEW_KEY, [])
+      .filter((review) => review.venue_id === venueId)
+      .filter((review) => visibleLocalContribution(review))
+      .filter((review) => matchesLocalOwner(review, demoUser?.id || null, deviceId))
+      .sort((a, b) => String(b.created_at || b.visit_date || '').localeCompare(String(a.created_at || a.visit_date || '')))[0] || null;
+  }
+
+  const { data, error } = await supabase.rpc('get_owned_reviews', {
+    p_anonymous_device_id: deviceId,
+    p_venue_id: venueId,
+  });
+  if (error) {
+    if (error.code === '42883' || /get_owned_reviews/i.test(error.message || '')) {
+      throw new Error('Redigering krever den medfølgende Supabase-migreringen for vurderinger.');
+    }
+    throw error;
+  }
+  const owned = Array.isArray(data) ? data[0] : data;
+  return owned ? normalizeReview(owned) : null;
 }
 
 function optionalRating(...values) {
@@ -605,16 +643,110 @@ export async function submitReview(review) {
     status: 'approved',
   };
 
-  const { data, error } = await supabase.from('reviews').insert(payload).select('*').single();
+  const { error } = await supabase.from('reviews').insert(payload);
   if (error) throwSubmitError(error);
 
+  let data = { ...payload, id: null, created_at: new Date().toISOString() };
+  try {
+    const ownedResult = await supabase.rpc('get_owned_reviews', {
+      p_anonymous_device_id: anonymousDeviceId,
+      p_venue_id: review.venue_id,
+    });
+    if (!ownedResult.error && ownedResult.data?.length) data = ownedResult.data[0];
+  } catch (lookupError) {
+    console.warn('Review was saved, but its editable copy could not be loaded:', lookupError);
+  }
+
+  let facilityWarning = '';
   if (hasFacilityReport(review)) {
     const facilityPayload = buildFacilityPayload(review, authUser?.id || null, { publish: true });
     const { error: facilityError } = await supabase.from('facility_reports').insert(facilityPayload);
-    if (facilityError) throw facilityError;
+    if (facilityError) {
+      facilityWarning = readableErrorMessage(facilityError) || 'Praktisk info kunne ikke oppdateres.';
+      console.warn('Review was saved, but facility info failed:', facilityError);
+    }
   }
 
-  return data;
+  return { ...data, facilityWarning };
+}
+
+
+export async function updateReview(reviewId, review) {
+  if (!reviewId) throw new Error('Mangler vurdering å oppdatere.');
+  const userName = cleanUserName(review.user_name);
+  if (!userName) throw new Error('Skriv inn navn eller kallenavn før du lagrer vurderingen.');
+  const comment = cleanLimitedText(review.comment, MAX_COMMENT_LENGTH);
+  const anonymousDeviceId = getAnonymousDeviceId();
+  const visitDate = cleanVisitDate(review.visit_date);
+
+  if (!hasSupabaseConfig) {
+    const demoUser = getDemoUser();
+    const reviews = readLocal(LOCAL_REVIEW_KEY, []);
+    const existing = reviews.find((item) => item.id === reviewId);
+    if (!existing || !matchesLocalOwner(existing, demoUser?.id || null, anonymousDeviceId)) {
+      throw new Error('Fant ikke en vurdering du kan redigere på denne enheten.');
+    }
+    const updated = {
+      ...existing,
+      venue_id: review.venue_id,
+      user_name: userName,
+      tribunesliter_minutes: Number(review.tribunesliter_minutes),
+      comfort_score: Number(review.comfort_score),
+      view_score: Number(review.view_score),
+      temperature_score: Number(review.temperature_score),
+      accessibility_score: Number(review.accessibility_score),
+      event_type: review.event_type,
+      visit_date: visitDate,
+      comment,
+      updated_at: new Date().toISOString(),
+    };
+    writeLocal(LOCAL_REVIEW_KEY, reviews.map((item) => (item.id === reviewId ? updated : item)));
+    if (hasFacilityReport(review)) {
+      const reports = readLocal(LOCAL_FACILITY_KEY, []);
+      const facilityPayload = {
+        ...buildFacilityPayload(review, demoUser?.id || null, { publish: true }),
+        id: crypto.randomUUID(),
+        venue_name: review.venue_name || '',
+        created_at: new Date().toISOString(),
+      };
+      writeLocal(LOCAL_FACILITY_KEY, [facilityPayload, ...reports]);
+    }
+    return updated;
+  }
+
+  const { data, error } = await supabase.rpc('update_owned_review', {
+    p_review_id: reviewId,
+    p_anonymous_device_id: anonymousDeviceId,
+    p_user_name: userName,
+    p_tribunesliter_minutes: Number(review.tribunesliter_minutes),
+    p_comfort_score: Number(review.comfort_score),
+    p_view_score: Number(review.view_score),
+    p_temperature_score: Number(review.temperature_score),
+    p_accessibility_score: Number(review.accessibility_score),
+    p_event_type: review.event_type,
+    p_visit_date: visitDate,
+    p_comment: comment,
+  });
+  if (error) {
+    if (error.code === '42883' || /update_owned_review/i.test(error.message || '')) {
+      throw new Error('Redigering krever den medfølgende Supabase-migreringen for vurderinger.');
+    }
+    throwSubmitError(error);
+  }
+
+  const updated = Array.isArray(data) ? data[0] : data;
+  let facilityWarning = '';
+  if (hasFacilityReport(review)) {
+    const authUser = await getOptionalAuthenticatedUser();
+    const facilityPayload = buildFacilityPayload(review, authUser?.id || null, { publish: true });
+    const { error: facilityError } = await supabase.from('facility_reports').insert(facilityPayload);
+    if (facilityError) {
+      facilityWarning = readableErrorMessage(facilityError) || 'Praktisk info kunne ikke oppdateres.';
+      console.warn('Review was updated, but facility info failed:', facilityError);
+    }
+  }
+
+  return { ...(updated || {}), facilityWarning };
 }
 
 export async function submitFacilityReport(report) {
@@ -635,9 +767,9 @@ export async function submitFacilityReport(report) {
   }
 
   const payload = buildFacilityPayload({ ...report, user_name: userName }, authUser?.id || null, { publish: true });
-  const { data, error } = await supabase.from('facility_reports').insert(payload).select('*').single();
+  const { error } = await supabase.from('facility_reports').insert(payload);
   if (error) throw error;
-  return data;
+  return { ...payload, created_at: new Date().toISOString() };
 }
 
 export async function submitVenueRequest(request) {
@@ -684,33 +816,14 @@ export async function fetchBadgeContributions() {
 
   const authUser = await getOptionalAuthenticatedUser();
 
-  async function fetchOwnedRows(table, select, options = {}) {
-    if (!authUser?.id && !deviceId) return [];
-
-    const rows = [];
-    for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
-      let query = supabase
-        .from(table)
-        .select(select)
-        .order('created_at', { ascending: true })
-        .range(from, from + SUPABASE_PAGE_SIZE - 1);
-
-      if (options.status) query = query.eq('status', options.status);
-      if (authUser?.id && deviceId) query = query.or(`user_id.eq.${authUser.id},anonymous_device_id.eq.${deviceId}`);
-      else if (authUser?.id) query = query.eq('user_id', authUser.id);
-      else query = query.eq('anonymous_device_id', deviceId);
-
-      const { data, error } = await query;
-      if (error) throw error;
-      rows.push(...data);
-      if (data.length < SUPABASE_PAGE_SIZE) break;
-    }
-    return rows;
-  }
-
-  const [reviews, facilityReports, venueRequests] = await Promise.all([
-    fetchOwnedRows('reviews', 'id, venue_id, user_id, anonymous_device_id, user_name, tribunesliter_minutes, comfort_score, view_score, temperature_score, accessibility_score, event_type, visit_date, comment, created_at, venues(id, municipality, is_outdoor)', { status: 'approved' }),
-    fetchOwnedRows('facility_reports', 'id, venue_id, user_id, anonymous_device_id, user_name, seating_type, seat_comfort, has_backrest, heating_level, toilet_quality, kiosk_status, parking, accessibility, roof_cover, view_quality, noise_level, notes, created_at, venues(id, municipality, is_outdoor)', { status: 'approved' }),
+  const [reviewsResult, facilitiesResult, venueRequests] = await Promise.all([
+    supabase.rpc('get_owned_reviews', {
+      p_anonymous_device_id: deviceId,
+      p_venue_id: null,
+    }),
+    supabase.rpc('get_owned_facility_reports', {
+      p_anonymous_device_id: deviceId,
+    }),
     authUser?.id
       ? supabase
           .from('venue_requests')
@@ -723,6 +836,26 @@ export async function fetchBadgeContributions() {
           })
       : Promise.resolve([]),
   ]);
+
+  if (reviewsResult.error) throw reviewsResult.error;
+  if (facilitiesResult.error) throw facilitiesResult.error;
+
+  const reviews = (reviewsResult.data || []).map((row) => ({
+    ...row,
+    venues: {
+      id: row.venue_id,
+      municipality: row.venue_municipality,
+      is_outdoor: row.venue_is_outdoor,
+    },
+  }));
+  const facilityReports = (facilitiesResult.data || []).map((row) => ({
+    ...row,
+    venues: {
+      id: row.venue_id,
+      municipality: row.venue_municipality,
+      is_outdoor: row.venue_is_outdoor,
+    },
+  }));
 
   return { reviews, facilityReports, venueRequests };
 }
