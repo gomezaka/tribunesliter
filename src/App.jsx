@@ -100,6 +100,19 @@ const PARKING_OPTIONS = [
   'VIP-forelder',
 ];
 
+const KIOSK_STATUS_OPTIONS = ['Ingen kiosk', 'Sporadisk', 'Kampåpen', 'Full cupmodus'];
+const KIOSK_ITEM_OPTIONS = [
+  ['Kaffe', '☕'],
+  ['Vaffel', '🧇'],
+  ['Pølse', '🌭'],
+  ['Brus', '🥤'],
+  ['Bakst', '🍰'],
+  ['Godteri', '🍫'],
+];
+const KIOSK_PAYMENT_OPTIONS = ['Vipps', 'Kort', 'Kontant'];
+const KIOSK_QUEUE_OPTIONS = ['Rett inn', 'Litt kø', 'Pausekaos'];
+const KIOSK_PREFIX = 'KIOSK2';
+
 const REVIEW_CATEGORIES = {
   indoor: [
     { key: 'comfort_score', label: 'Sittekomfort', icon: RUMPE_ICON, scale: 'seating' },
@@ -210,12 +223,64 @@ function parkingLabel(value) {
   return text;
 }
 
+function encodeKioskDetails({ status = 'Sporadisk', items = [], payment = 'Vipps', queue = 'Litt kø' } = {}) {
+  const safeStatus = KIOSK_STATUS_OPTIONS.includes(status) ? status : 'Sporadisk';
+  const safeItems = [...new Set(items)].filter((item) => KIOSK_ITEM_OPTIONS.some(([name]) => name === item));
+  const safePayment = KIOSK_PAYMENT_OPTIONS.includes(payment) ? payment : 'Vipps';
+  const safeQueue = KIOSK_QUEUE_OPTIONS.includes(queue) ? queue : 'Litt kø';
+  return [KIOSK_PREFIX, safeStatus, safeItems.join(','), safePayment, safeQueue].join('|');
+}
+
+function parseKioskDetails(value) {
+  const text = String(value || '').trim();
+  if (!text) return { status: 'Ikke registrert', items: [], payment: 'Ikke registrert', queue: 'Ikke registrert' };
+  if (text.startsWith(`${KIOSK_PREFIX}|`)) {
+    const [, status, itemText, payment, queue] = text.split('|');
+    return {
+      status: KIOSK_STATUS_OPTIONS.includes(status) ? status : 'Sporadisk',
+      items: String(itemText || '').split(',').filter(Boolean),
+      payment: KIOSK_PAYMENT_OPTIONS.includes(payment) ? payment : 'Vipps',
+      queue: KIOSK_QUEUE_OPTIONS.includes(queue) ? queue : 'Litt kø',
+    };
+  }
+  const legacy = kioskLabel(text);
+  return {
+    status: /ingen|tørrmunn/i.test(legacy) ? 'Ingen kiosk' : /cup|god pausemat|foreldrebuffet/i.test(legacy) ? 'Full cupmodus' : /åpen|kaffe|dugnad/i.test(legacy) ? 'Kampåpen' : 'Sporadisk',
+    items: /kaffe/i.test(text) ? ['Kaffe'] : [],
+    payment: 'Vipps',
+    queue: 'Litt kø',
+  };
+}
+
+function venueSeatScore(venue) {
+  const value = Number(venue?.seat_score ?? venue?.facilities?.seat_comfort ?? 0);
+  return value >= 1 && value <= 5 ? value : 0;
+}
+
+function venueViewScore(venue) {
+  const value = Number(venue?.view_score ?? venue?.facilities?.view_quality ?? 0);
+  return value >= 1 && value <= 5 ? value : 0;
+}
+
+function venueScore(venue) {
+  const values = [venueSeatScore(venue), venueViewScore(venue)].filter(Boolean);
+  if (values.length) return values.reduce((sum, value) => sum + value, 0) / values.length;
+  const legacyScore = scoreFromMinutes(venue?.tribunesliter_minutes || 0);
+  return legacyScore ? legacyScore / 20 : 0;
+}
+
+function formatVenueScore(venue) {
+  const value = venueScore(venue);
+  return value ? value.toFixed(1) : '–';
+}
+
 function makeEmptyReview() {
+  const kiosk = { status: '', items: [], payment: '', queue: '' };
   return {
     venue_id: '',
     venue_municipality: '',
     user_name: '',
-    tribunesliter_minutes: 25,
+    tribunesliter_minutes: 30,
     comfort_score: 3,
     view_score: 3,
     temperature_score: 3,
@@ -223,54 +288,65 @@ function makeEmptyReview() {
     event_type: 'Kamp',
     visit_date: new Date().toISOString().slice(0, 10),
     comment: '',
-    facility_seating_type: 'Trebenk',
+    facility_seating_type: '',
     facility_seat_comfort: 3,
     facility_has_backrest: false,
-    facility_heating_level: 3,
-    facility_toilet_quality: 3,
-    facility_kiosk_status: 'Vaffelrykter',
-    facility_parking: 'Standard kaos',
-    facility_accessibility: 3,
+    facility_heating_level: null,
+    facility_toilet_quality: null,
+    facility_kiosk_status: '',
+    facility_parking: '',
+    facility_accessibility: null,
     facility_roof_cover: false,
     facility_view_quality: 3,
-    facility_noise_level: 3,
+    facility_noise_level: null,
     facility_notes: '',
+    kiosk_status_level: kiosk.status,
+    kiosk_items: kiosk.items,
+    kiosk_payment: kiosk.payment,
+    kiosk_queue: kiosk.queue,
     include_facilities: true,
   };
 }
 
 function makeFacilityReportFromVenue(venue) {
   const facilities = venue?.facilities || {};
+  const hasKioskData = Boolean(String(facilities.kiosk_status || '').trim());
+  const kiosk = hasKioskData ? parseKioskDetails(facilities.kiosk_status) : { status: '', items: [], payment: '', queue: '' };
   return {
     venue_id: venue?.id || '',
     venue_name: venue?.name || '',
-    facility_seating_type: facilities.seating_type || 'Trebenk',
+    facility_seating_type: facilities.seating_type || '',
     facility_seat_comfort: Number(facilities.seat_comfort || 3),
     facility_has_backrest: Boolean(facilities.has_backrest),
-    facility_heating_level: Number(facilities.heating_level || 3),
-    facility_toilet_quality: Number(facilities.toilet_quality || 3),
-    facility_kiosk_status: kioskLabel(facilities.kiosk_status),
-    facility_parking: parkingLabel(facilities.parking),
-    facility_accessibility: Number(facilities.accessibility || 3),
+    facility_heating_level: facilities.heating_level == null ? null : Number(facilities.heating_level),
+    facility_toilet_quality: facilities.toilet_quality == null ? null : Number(facilities.toilet_quality),
+    facility_kiosk_status: facilities.kiosk_status || '',
+    facility_parking: facilities.parking ? parkingLabel(facilities.parking) : '',
+    facility_accessibility: facilities.accessibility == null ? null : Number(facilities.accessibility),
     facility_roof_cover: Boolean(facilities.roof_cover),
     facility_view_quality: Number(facilities.view_quality || 3),
-    facility_noise_level: Number(facilities.noise_level || 3),
+    facility_noise_level: facilities.noise_level == null ? null : Number(facilities.noise_level),
     facility_notes: facilities.notes || '',
+    kiosk_status_level: kiosk.status,
+    kiosk_items: kiosk.items,
+    kiosk_payment: kiosk.payment,
+    kiosk_queue: kiosk.queue,
   };
 }
 
 function makeReviewFormForVenue(venue, current = makeEmptyReview()) {
   const facilityValues = makeFacilityReportFromVenue(venue);
-  const venueIsOutdoor = Boolean(venue?.is_outdoor);
+  const seatScore = facilityValues.facility_seat_comfort || 3;
   return {
     ...current,
     ...facilityValues,
     venue_id: venue?.id || current.venue_id || '',
     venue_municipality: venue?.municipality || current.venue_municipality || '',
-    comfort_score: facilityValues.facility_seat_comfort,
-    view_score: facilityValues.facility_view_quality,
-    temperature_score: facilityValues.facility_heating_level,
-    accessibility_score: venueIsOutdoor ? facilityValues.facility_noise_level : facilityValues.facility_noise_level,
+    comfort_score: seatScore,
+    view_score: facilityValues.facility_view_quality || 3,
+    tribunesliter_minutes: Math.max(5, Math.min(90, Math.round(seatScore * 15))),
+    temperature_score: 3,
+    accessibility_score: 3,
     include_facilities: true,
   };
 }
@@ -411,12 +487,11 @@ const BADGE_DEFINITIONS = [
   { id: 'benkevarmer', icon: '🪑', title: 'Benkevarmer', description: '3 baner ratet. Rumpa begynner å få erfaring.', metric: 'checkIns', target: 3 },
   { id: 'rumpekompass', icon: RUMPE_ICON, title: 'Rumpekompasset', description: '10 sjekk-ins. Du finner benkekvalitet i blinde.', metric: 'checkIns', target: 10 },
   { id: 'banesliter', icon: '🏟️', title: 'Banesliter', description: '25 sjekk-ins. Lokalidrettens uoffisielle sitteekspert.', metric: 'checkIns', target: 25 },
-  { id: 'vaffelvarsler', icon: '🧇', title: 'Vaffelvarsler', description: '3 fasilitetsbidrag om kiosk, do eller parkering.', metric: 'facilityReports', target: 3 },
+  { id: 'vaffelvarsler', icon: '🧇', title: 'Vaffelvarsler', description: '3 praktiske bidrag om kiosk eller parkering.', metric: 'facilityReports', target: 3 },
   { id: 'kartfikser', icon: '🗺️', title: 'Kartfikser', description: 'Lagt til et manglende anlegg.', metric: 'venueRequests', target: 1 },
   { id: 'treplanketemmeren', icon: '🪵', title: 'Treplanketemmeren', description: '5 utendørsbaner vurdert. Du har overlevd mer trebenk enn kroppen anbefaler.', metric: 'outdoorReviews', target: 5 },
   { id: 'hallstølen', icon: '🏐', title: 'Hallstølen', description: '5 innendørsanlegg vurdert. Ribbevegg, klappstol og betongtribune er kartlagt.', metric: 'indoorReviews', target: 5 },
   { id: 'kioskprofeten', icon: '🌭', title: 'Kioskprofeten', description: '5 kioskvurderinger. Du lukter vaffelplate på 300 meters avstand.', metric: 'kioskReports', target: 5 },
-  { id: 'dopatruljen', icon: '🚽', title: 'Dopatruljen', description: '5 toalettvurderinger. Ingen kampdag uten strategisk do-kartlegging.', metric: 'toiletReports', target: 5 },
   { id: 'parkeringsorakelet', icon: '🅿️', title: 'Parkeringsorakelet', description: '5 parkeringsvurderinger. Bil, sykkel eller bare gi opp?', metric: 'parkingReports', target: 5 },
   { id: 'førsteradstraumet', icon: '👀', title: 'Førsteradstraumet', description: '3 vurderinger med dårlig sikt. Du har sett mer rygg enn kamp.', metric: 'badViewReviews', target: 3 },
   { id: 'betongrumpa', icon: '🪨', title: 'Betongrumpa', description: '10 dårlige sitteplassvurderinger. Smerteterskelen er ikke normal lenger.', metric: 'badSeatReviews', target: 10 },
@@ -689,16 +764,11 @@ function isRefereeComment(form) {
 }
 
 function isAllBadReview(form) {
-  const mainScores = [form?.comfort_score, form?.view_score, form?.temperature_score, form?.accessibility_score].map(Number);
-  if (!mainScores.every((value) => value === 1)) return false;
-  if (!form?.include_facilities) return true;
-  const facilityScores = [form?.facility_seat_comfort, form?.facility_view_quality, form?.facility_heating_level, form?.facility_toilet_quality].map(Number);
-  return facilityScores.every((value) => value === 1) && parkingLabel(form?.facility_parking) === 'Glem bil';
+  return [form?.comfort_score, form?.view_score].map(Number).every((value) => value === 1);
 }
 
 function isPerfectReview(form) {
-  const scores = [form?.comfort_score, form?.view_score, form?.temperature_score, form?.accessibility_score].map(Number);
-  return scores.every((value) => value === 5);
+  return [form?.comfort_score, form?.view_score].map(Number).every((value) => value === 5);
 }
 
 function buildReviewBadgeProgressPatch(form, venue) {
@@ -730,7 +800,7 @@ function buildReviewBadgeProgressPatch(form, venue) {
   if (includeFacilities) {
     patch.facilityReports = 1;
     patch.kioskReports = form?.facility_kiosk_status ? 1 : 0;
-    patch.toiletReports = Number(form?.facility_toilet_quality || 0) ? 1 : 0;
+    patch.toiletReports = 0;
     patch.parkingReports = form?.facility_parking ? 1 : 0;
     patch.noCarParkingReviews = parkingLabel(form?.facility_parking) === 'Glem bil' ? 1 : 0;
   }
@@ -986,8 +1056,8 @@ export default function App() {
           (filter === 'outdoor' && venue.is_outdoor) ||
           (filter === 'rated' && Number(venue.review_count || 0) > 0) ||
           (filter === 'needsData' && Number(venue.review_count || 0) === 0) ||
-          (filter === 'cushion' && cushionAlarm(venue)) ||
-          (filter === 'kiosk' && Boolean(venue.facilities?.kiosk_status));
+          (filter === 'view' && venueViewScore(venue) >= 4) ||
+          (filter === 'kiosk' && Boolean(venue.facilities?.kiosk_status) && parseKioskDetails(venue.facilities.kiosk_status).status !== 'Ingen kiosk');
         const matchesMunicipality = municipalityFilter === 'all' || venue.municipality === municipalityFilter;
         const matchesSport = sportFilter === 'all' || (venue.sport_tags || []).includes(sportFilter);
         const searchable = [venue.name, venue.municipality, venue.address, venue.venue_type, ...(venue.sport_tags || [])]
@@ -996,7 +1066,7 @@ export default function App() {
         return matchesFilter && matchesMunicipality && matchesSport && (!normalizedQuery || searchable.includes(normalizedQuery));
       })
       .sort((a, b) => {
-        if (sortMode === 'score') return scoreFromMinutes(b.tribunesliter_minutes) - scoreFromMinutes(a.tribunesliter_minutes);
+        if (sortMode === 'score') return venueScore(b) - venueScore(a);
         if (sortMode === 'reviews') return Number(b.review_count || 0) - Number(a.review_count || 0);
         if (sortMode === 'municipality') return `${a.municipality} ${a.name}`.localeCompare(`${b.municipality} ${b.name}`, 'nb');
         return a.name.localeCompare(b.name, 'nb');
@@ -1036,6 +1106,9 @@ export default function App() {
         venue_municipality: venue?.municipality || current.venue_municipality,
         user_name: cleanContributorName(current.user_name) || effectiveContributorName(),
       }));
+    }
+    if (nextView === 'rate' && !venueId) {
+      setReviewForm({ ...makeEmptyReview(), user_name: effectiveContributorName() });
     }
     if (nextView === 'venue' && venueId) {
       setRecentVenueIds((current) => [venueId, ...current.filter((id) => id !== venueId)].slice(0, 6));
@@ -1085,7 +1158,7 @@ export default function App() {
   async function shareVenue(venue) {
     if (!venue) return;
     const url = window.location.href.split('#')[0];
-    const text = `${venue.name} på Tribunesliter · ${deriveTribunesliterLabel(venue.tribunesliter_minutes || 0)}`;
+    const text = `${venue.name} på Tribunesliter · tribunescore ${formatVenueScore(venue)}/5`;
     try {
       if (navigator.share) {
         await navigator.share({ title: `Tribunesliter: ${venue.name}`, text, url });
@@ -1268,12 +1341,20 @@ export default function App() {
     }
   }
 
-  const isDetail = ['venue', 'rate', 'facility', 'newVenue', 'admin', 'thanks'].includes(view);
+  const isDetail = ['venue', 'rate', 'newVenue', 'admin', 'thanks'].includes(view);
 
   return (
     <main className="app-shell">
       <section className={cx('phone-frame', isDetail && 'phone-frame--detail')} aria-label="Tribunesliter mobilapp">
-        <Header user={user} profile={profile} mode={mode} onHome={() => go('home')} onProfile={() => go('profile')} />
+        <Header
+          venues={venues}
+          query={query}
+          onQuery={setQuery}
+          onHome={() => go('home')}
+          onMap={() => go('explore')}
+          onSearch={() => go('search')}
+          onVenue={(id) => go('venue', id)}
+        />
 
         {notice && view !== 'profile' && (
           <button className="notice" type="button" onClick={() => setNotice('')}>
@@ -1291,6 +1372,8 @@ export default function App() {
                 recentVenues={recentVenues}
                 user={user}
                 profile={profile}
+                onMap={() => go('explore')}
+                onRate={() => go('rate')}
                 onSearch={() => go('search')}
                 onVenue={(id) => go('venue', id)}
                 onNewVenue={() => openNewVenueForm()}
@@ -1342,10 +1425,6 @@ export default function App() {
                   setReviewForm((form) => ({ ...makeReviewFormForVenue(selectedVenue, form), user_name: cleanContributorName(form.user_name) || effectiveContributorName() }));
                   go('rate', selectedVenue.id);
                 }}
-                onReportFacility={() => {
-                  setFacilityForm({ ...makeFacilityReportFromVenue(selectedVenue), user_name: effectiveContributorName() });
-                  go('facility', selectedVenue.id);
-                }}
                 isSaved={savedVenueIds.includes(selectedVenue.id)}
                 onToggleSaved={() => toggleSavedVenue(selectedVenue.id)}
                 onShare={() => shareVenue(selectedVenue)}
@@ -1354,21 +1433,12 @@ export default function App() {
             {view === 'rate' && (
               <RateView
                 venues={venues}
-                selectedVenue={selectedVenue}
+                selectedVenue={reviewForm.venue_id ? selectedVenue : null}
                 form={reviewForm}
                 setForm={setReviewForm}
                 onSubmit={handleSubmitReview}
                 onNewVenue={(draft) => openNewVenueForm(draft)}
-                onBack={() => go(selectedVenue ? 'venue' : 'home', selectedVenue?.id)}
-              />
-            )}
-            {view === 'facility' && (
-              <FacilityReportView
-                selectedVenue={selectedVenue}
-                form={facilityForm}
-                setForm={setFacilityForm}
-                onSubmit={handleSubmitFacilityReport}
-                onBack={() => go(selectedVenue ? 'venue' : 'home', selectedVenue?.id)}
+                onBack={() => go(reviewForm.venue_id && selectedVenue ? 'venue' : 'home', reviewForm.venue_id ? selectedVenue?.id : undefined)}
               />
             )}
             {view === 'thanks' && <ThanksView venue={selectedVenue} onHome={() => go('home')} onVenue={() => go('venue', selectedVenue?.id)} />}
@@ -1427,18 +1497,53 @@ export default function App() {
   );
 }
 
-function Header({ onHome }) {
+function Header({ venues, query, onQuery, onHome, onMap, onSearch, onVenue }) {
+  const [focused, setFocused] = useState(false);
+  const normalized = query.trim().toLowerCase();
+  const matches = useMemo(() => {
+    if (!normalized) return [];
+    return venues
+      .filter((venue) => [venue.name, venue.municipality, venue.address, venue.venue_type, ...(venue.sport_tags || [])]
+        .filter(Boolean).join(' ').toLowerCase().includes(normalized))
+      .sort((a, b) => venueScore(b) - venueScore(a) || a.name.localeCompare(b.name, 'nb'))
+      .slice(0, 5);
+  }, [venues, normalized]);
+
   return (
-    <header className="topbar">
-      <div className="brand-stack">
-        <button className="brand-button" type="button" onClick={onHome} aria-label="Til forsiden">
+    <header className="topbar topbar--overhaul">
+      <div className="brand-row-overhaul">
+        <button className="brand-button brand-button--compact" type="button" onClick={onHome} aria-label="Til forsiden">
           <img className="brand-banner" src="/assets/tribunesliter-banner.png" alt="Tribunesliter" />
         </button>
-        <button className="region-pill" type="button" onClick={onHome} aria-label="Velg region">
-          <span>Din region</span>
-          <strong>Viken</strong>
-        </button>
+        <button className="region-chip" type="button" onClick={onHome}><span>Region</span><strong>Østfold</strong></button>
       </div>
+      <div className="global-search-row">
+        <label className="global-searchbox">
+          <Icon name="search" />
+          <input
+            value={query}
+            onChange={(event) => onQuery(event.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => window.setTimeout(() => setFocused(false), 120)}
+            onKeyDown={(event) => { if (event.key === 'Enter' && query.trim()) onSearch(); }}
+            placeholder="Søk hall, bane eller kommune…"
+            aria-label="Søk hall, bane eller kommune"
+          />
+        </label>
+        <button className="header-map-button" type="button" onClick={onMap}><Icon name="map" /><span>Kart</span></button>
+      </div>
+      {focused && normalized && (
+        <div className="global-search-popover" role="listbox" aria-label="Søketreff">
+          <div className="global-search-popover__head"><span>{matches.length ? 'Treff mens du skriver' : 'Ingen treff'}</span><small>{matches.length} vist</small></div>
+          {matches.length ? matches.map((venue) => (
+            <button type="button" className="global-search-hit" key={venue.id} onMouseDown={(event) => event.preventDefault()} onClick={() => { onQuery(''); onVenue(venue.id); }}>
+              <span className="mini-score">{formatVenueScore(venue)}</span>
+              <span><strong>{venue.name}</strong><small>{venue.municipality} · {primarySport(venue)}</small></span><i>›</i>
+            </button>
+          )) : <button type="button" className="global-search-empty" onMouseDown={(event) => event.preventDefault()} onClick={onSearch}>Ingen anlegg matcher «{query}». Åpne fullstendig søk.</button>}
+          {matches.length > 0 && <button type="button" className="global-search-all" onMouseDown={(event) => event.preventDefault()} onClick={onSearch}>Vis alle treff og filtre</button>}
+        </div>
+      )}
     </header>
   );
 }
@@ -1454,81 +1559,98 @@ function LoadingView() {
   );
 }
 
-function HomeView({ venues, recentVenues, user, profile, onSearch, onVenue, onNewVenue }) {
+function venueDistanceKm(venue, location) {
+  if (!location || !Number.isFinite(Number(venue?.latitude)) || !Number.isFinite(Number(venue?.longitude))) return null;
+  const toRad = (value) => value * Math.PI / 180;
+  const lat1 = toRad(location.latitude);
+  const lat2 = toRad(Number(venue.latitude));
+  const dLat = lat2 - lat1;
+  const dLon = toRad(Number(venue.longitude) - location.longitude);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function mapPinStyle(venue, venues, index) {
+  const located = venues.filter((item) => Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)));
+  if (!located.length || !Number.isFinite(Number(venue?.latitude)) || !Number.isFinite(Number(venue?.longitude))) return undefined;
+  const lats = located.map((item) => Number(item.latitude));
+  const lons = located.map((item) => Number(item.longitude));
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats), minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  const latRange = Math.max(.001, maxLat - minLat), lonRange = Math.max(.001, maxLon - minLon);
+  const left = 10 + ((Number(venue.longitude) - minLon) / lonRange) * 78;
+  const top = 10 + ((maxLat - Number(venue.latitude)) / latRange) * 72;
+  return { left: `${left}%`, top: `${top}%` };
+}
+
+function HomeView({ venues, recentVenues, user, profile, onMap, onRate, onSearch, onVenue, onNewVenue }) {
   const displayName = userDisplayName(user, profile);
   const firstName = displayName.split(/\s+/)[0] || 'tribunesliter';
-  const topVenues = [...venues].sort((a, b) => scoreFromMinutes(b.tribunesliter_minutes) - scoreFromMinutes(a.tribunesliter_minutes)).slice(0, 5);
-  const reportedVenues = [...venues]
-    .filter((venue) => Number(venue.review_count || 0) > 0)
-    .sort((a, b) => Number(b.review_count || 0) - Number(a.review_count || 0))
-    .slice(0, 3);
-  const recentCards = recentVenues.length ? recentVenues : topVenues.slice(0, 4);
-  const totalReports = venues.reduce((sum, venue) => sum + Number(venue.review_count || 0), 0);
+  const topVenues = [...venues].sort((a, b) => venueScore(b) - venueScore(a)).slice(0, 4);
+  const nearbyVenues = (recentVenues.length ? recentVenues : topVenues).slice(0, 4);
 
   return (
-    <section className="screen home-dashboard-screen">
-      <div className="home-greeting">
-        <span className="subtle-label">Tribunesliter beta</span>
-        <h1>Hei, {firstName}</h1>
-        <p>Finn hallen før kamp, sjekk putefaren og bidra med rumpedata etterpå.</p>
-        <button className="searchbox searchbox--button" type="button" onClick={onSearch}>
-          <Icon name="search" />
-          <span>Søk hall, bane eller kommune</span>
-        </button>
-      </div>
+    <section className="screen home-overhaul-screen">
+      <article className="overhaul-hero">
+        <span className="eyebrow">Tribunesliter beta</span>
+        <h1>Hei, {firstName}. Finn en god tribune før kampen.</h1>
+        <p>Søk ligger alltid øverst. Kartet er ett trykk unna, og scoren handler bare om sitteplass og utsikt.</p>
+        <div className="hero-actions-overhaul">
+          <button className="primary-action" type="button" onClick={onMap}><Icon name="map" /> Finn nærmeste bane</button>
+          <button className="secondary-action" type="button" onClick={onRate}>＋ Vurder et sted</button>
+        </div>
+      </article>
 
-      <div className="home-stat-strip">
-        <InfoCell label="Anlegg" value={venues.length} />
-        <InfoCell label="Vurderinger" value={totalReports} />
-        <InfoCell label="Topp score" value={topVenues[0] ? scoreFromMinutes(topVenues[0].tribunesliter_minutes) : 0} />
-      </div>
-
-      <section className="home-section">
-        <SectionHeader title={recentVenues.length ? 'Sist besøkt' : 'Kom i gang'} action="Søk" onAction={onSearch} />
-        {recentCards.length ? (
-          <div className="recent-rail">
-            {recentCards.map((venue) => <RecentVenueCard key={venue.id} venue={venue} onClick={() => onVenue(venue.id)} />)}
+      <section className="overhaul-section">
+        <SectionHeader title={recentVenues.length ? 'Sist besøkt' : 'Steder å sjekke'} action="Vis alle" onAction={onSearch} />
+        {nearbyVenues.length ? (
+          <div className="nearby-overhaul-grid">
+            {nearbyVenues.map((venue) => <OverhaulVenueCard key={venue.id} venue={venue} onClick={() => onVenue(venue.id)} />)}
           </div>
-        ) : (
-          <EmptyState title="Ingen haller ennå" text="Når Supabase har anlegg, dukker de opp her." action="Legg til anlegg" onAction={onNewVenue} />
-        )}
+        ) : <EmptyState title="Ingen anlegg ennå" text="Legg inn første bane eller hall." action="Legg til anlegg" onAction={onNewVenue} />}
       </section>
 
-      <section className="home-section">
-        <SectionHeader title="Ferske vurderinger" action="Søk" onAction={onSearch} />
-        {reportedVenues.length ? (
-          <div className="report-feed">
-            {reportedVenues.map((venue) => <ReportTeaser key={venue.id} venue={venue} onClick={() => onVenue(venue.id)} />)}
-          </div>
-        ) : (
-          <EmptyState title="Ingen vurderinger enda" text="Bli første som tester en tribune og setter standarden." action="Finn hall" onAction={onSearch} />
-        )}
-      </section>
-
-      <section className="home-section">
-        <SectionHeader title="Snillest mot rumpa" action="Alle" onAction={onSearch} />
-        <div className="toplist app-card">
-          {topVenues.length ? topVenues.map((venue, index) => (
-            <TopVenueRow key={venue.id} venue={venue} rank={index + 1} onClick={() => onVenue(venue.id)} />
-          )) : (
-            <p className="muted">Topplisten våkner når hallene er hentet.</p>
-          )}
+      <section className="overhaul-section">
+        <SectionHeader title="Snillest mot tribunesliterne" action="Alle anlegg" onAction={onSearch} />
+        <div className="overhaul-list app-card">
+          {topVenues.map((venue) => <OverhaulWideVenue key={venue.id} venue={venue} onClick={() => onVenue(venue.id)} />)}
         </div>
       </section>
 
-      <button className="floating-new-venue" type="button" onClick={onNewVenue}>
-        + Legg til nytt anlegg
-      </button>
+      <section className="overhaul-section overhaul-hints">
+        <h2>Hva sjekker vi?</h2>
+        <div className="overhaul-pill-row"><span>🍑 Sitteplass</span><span>👀 Utsikt</span><span>🅿️ Parkering</span><span>🧇 Kiosk</span></div>
+      </section>
     </section>
   );
 }
 
+function OverhaulVenueCard({ venue, onClick }) {
+  return (
+    <button className="overhaul-venue-card" type="button" onClick={onClick}>
+      <div className="overhaul-card-top"><span className="overhaul-score">{formatVenueScore(venue)}</span><small>{venue.is_outdoor ? 'Ute' : 'Inne'}</small></div>
+      <strong>{venue.name}</strong>
+      <small>{venue.municipality} · {primarySport(venue)}</small>
+      <div className="mini-metrics-overhaul"><span>🍑 {venueSeatScore(venue) ? venueSeatScore(venue).toFixed(1) : '–'}</span><span>👀 {venueViewScore(venue) ? venueViewScore(venue).toFixed(1) : '–'}</span></div>
+    </button>
+  );
+}
+
+function OverhaulWideVenue({ venue, onClick }) {
+  return (
+    <button className="overhaul-wide-venue" type="button" onClick={onClick}>
+      <span className="overhaul-score">{formatVenueScore(venue)}</span>
+      <span><strong>{venue.name}</strong><small>{venue.municipality} · {primarySport(venue)}</small></span>
+      <i>›</i>
+    </button>
+  );
+}
+
 function RecentVenueCard({ venue, onClick }) {
-  const score = scoreFromMinutes(venue.tribunesliter_minutes);
+  const score = formatVenueScore(venue);
   return (
     <button className="recent-card" type="button" onClick={onClick}>
       <div className={cx('score-badge', `score-badge--${venueTone(venue)}`)}>
-        <b>{score || '–'}</b>
+        <b>{score}</b>
         <span>Score</span>
       </div>
       <span className={cx('tag', venue.is_outdoor ? 'tag--blue' : 'tag--green')}>{venue.is_outdoor ? 'Ute' : 'Inne'}</span>
@@ -1552,12 +1674,12 @@ function ReportTeaser({ venue, onClick }) {
 }
 
 function TopVenueRow({ venue, rank, onClick }) {
-  const score = scoreFromMinutes(venue.tribunesliter_minutes);
+  const score = formatVenueScore(venue);
   return (
     <button className="toplist-row" type="button" onClick={onClick}>
       <span className="toplist-rank">{rank}</span>
       <div className={cx('score-badge', `score-badge--${venueTone(venue)}`)}>
-        <b>{score || '–'}</b>
+        <b>{score}</b>
         <span>Score</span>
       </div>
       <div>
@@ -1600,7 +1722,7 @@ function SearchView({
           ['all', 'Alle'],
           ['indoor', 'Innendørs'],
           ['outdoor', 'Utendørs'],
-          ['cushion', 'Putealarm 🪑'],
+          ['view', 'God utsikt 👀'],
           ['kiosk', 'Kiosk'],
           ['rated', 'Har data'],
           ['needsData', 'Mangler data'],
@@ -1633,7 +1755,7 @@ function SearchView({
         <label>
           <span>Sorter</span>
           <select value={sortMode} onChange={(event) => onSortMode(event.target.value)}>
-            <option value="score">Snillest mot rumpa</option>
+            <option value="score">Best tribunescore</option>
             <option value="reviews">Flest vurderinger</option>
             <option value="municipality">Kommune</option>
             <option value="name">Navn</option>
@@ -1662,63 +1784,68 @@ function SearchView({
 
 
 function ExploreView({ venues, municipalities, onVenue, onNewVenue }) {
-  const grouped = municipalities.map((municipality) => ({
-    municipality,
-    venues: venues.filter((venue) => venue.municipality === municipality),
-  })).filter((group) => group.venues.length);
-  const outdoorCount = venues.filter((venue) => venue.is_outdoor).length;
-  const ratedCount = venues.filter((venue) => Number(venue.review_count || 0) > 0).length;
+  const [mapFilter, setMapFilter] = useState('all');
+  const [userLocation, setUserLocation] = useState(null);
+  const [locationState, setLocationState] = useState('');
+  const visibleVenues = useMemo(() => venues.filter((venue) => {
+    if (mapFilter === 'indoor') return !venue.is_outdoor;
+    if (mapFilter === 'outdoor') return venue.is_outdoor;
+    if (mapFilter === 'view') return venueViewScore(venue) >= 4;
+    if (mapFilter === 'kiosk') return Boolean(venue.facilities?.kiosk_status) && parseKioskDetails(venue.facilities?.kiosk_status).status !== 'Ingen kiosk';
+    return true;
+  }).sort((a, b) => {
+    if (userLocation) {
+      const da = venueDistanceKm(a, userLocation);
+      const db = venueDistanceKm(b, userLocation);
+      if (da != null && db != null) return da - db;
+      if (da != null) return -1;
+      if (db != null) return 1;
+    }
+    return venueScore(b) - venueScore(a);
+  }), [venues, mapFilter, userLocation]);
+  const mapVenues = visibleVenues.slice(0, 6);
+
+  function locate() {
+    if (!navigator.geolocation) { setLocationState('Posisjon støttes ikke i denne nettleseren.'); return; }
+    setLocationState('Henter posisjon…');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setLocationState('Sortert etter avstand der koordinater finnes.');
+      },
+      () => setLocationState('Kunne ikke hente posisjon.'),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
+    );
+  }
 
   return (
-    <section className="screen explore-screen">
-      <div className="home-title-block">
-        <span className="subtle-label">Utforsk</span>
-        <h1>Kart, kommuner og anlegg.</h1>
-        <p>Rask oversikt for beta-testing. Kartlenker åpnes i Google Maps når adresse finnes.</p>
+    <section className="screen map-overhaul-screen">
+      <span className="eyebrow">Kart</span>
+      <h1>Finn en bane fort</h1>
+      <p className="lead">Filtrer uten å forlate kartet. Bruk posisjon for å få nærmeste anlegg først.</p>
+      <div className="overhaul-pill-row overhaul-pill-row--buttons">
+        {[['all', userLocation ? 'Nærmest' : 'Alle'],['indoor','Innendørs'],['outdoor','Utendørs'],['view','God utsikt'],['kiosk','Kiosk']].map(([key,label]) => (
+          <button type="button" className={cx(mapFilter === key && 'active')} key={key} onClick={() => setMapFilter(key)}>{label}</button>
+        ))}
       </div>
-
-      <div className="stat-grid app-card">
-        <InfoCell label="Anlegg" value={venues.length} />
-        <InfoCell label="Kommuner" value={municipalities.length} />
-        <InfoCell label="Utendørs" value={outdoorCount} />
-        <InfoCell label="Med vurderinger" value={ratedCount} />
+      <div className="overhaul-map" aria-label="Kartoversikt over anlegg">
+        {mapVenues.map((venue, index) => (
+          <button className={cx('overhaul-map-pin', `pin-${index + 1}`)} style={mapPinStyle(venue, mapVenues, index)} type="button" key={venue.id} onClick={() => onVenue(venue.id)} aria-label={venue.name}>
+            <b>{formatVenueScore(venue)}</b>
+          </button>
+        ))}
+        <button className="overhaul-locate" type="button" onClick={locate}>⌖ Min posisjon</button>
       </div>
-
-      {grouped.length === 0 ? (
-        <EmptyState title="Ingen anlegg ennå" text="Legg inn første hall, så får utforsk-visningen innhold." action="Legg til anlegg" onAction={onNewVenue} />
-      ) : (
-        <div className="municipality-list">
-          {grouped.map((group) => (
-            <section className="municipality-card app-card" key={group.municipality}>
-              <div className="municipality-card__head">
-                <div>
-                  <span className="eyebrow">Kommune</span>
-                  <h2>{group.municipality}</h2>
-                </div>
-                <strong>{group.venues.length}</strong>
-              </div>
-              <div className="map-venue-list">
-                {group.venues.map((venue) => {
-                  const mapQuery = [venue.name, venue.address, venue.municipality].filter(Boolean).join(', ');
-                  return (
-                    <article className="map-venue-row" key={venue.id}>
-                      <button type="button" onClick={() => onVenue(venue.id)}>
-                        <strong>{venue.name}</strong>
-                        <span>{venue.venue_type} · {primarySport(venue)}</span>
-                      </button>
-                      {mapQuery && (
-                        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`} target="_blank" rel="noreferrer" aria-label={`Åpne kart for ${venue.name}`}>
-                          <Icon name="map" />
-                        </a>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+      <div className="map-overhaul-caption"><span>{visibleVenues.length} anlegg i treffet</span><span>{locationState || `${municipalities.length} kommuner`}</span></div>
+      <section className="overhaul-section">
+        <SectionHeader title="Anlegg" action="Legg til" onAction={onNewVenue} />
+        <div className="overhaul-list app-card">
+          {visibleVenues.length ? visibleVenues.slice(0, 12).map((venue) => {
+            const distance = venueDistanceKm(venue, userLocation);
+            return <button className="overhaul-wide-venue" type="button" key={venue.id} onClick={() => onVenue(venue.id)}><span className="overhaul-score">{formatVenueScore(venue)}</span><span><strong>{venue.name}</strong><small>{venue.municipality} · {primarySport(venue)}{distance != null ? ` · ${distance < 10 ? distance.toFixed(1) : Math.round(distance)} km` : ''}</small></span><i>›</i></button>;
+          }) : <EmptyState title="Ingen treff" text="Prøv et annet kartfilter." />}
         </div>
-      )}
+      </section>
     </section>
   );
 }
@@ -1749,131 +1876,68 @@ function SavedView({ venues, savedCount, onVenue, onExplore }) {
 }
 
 function VenueCard({ venue, onClick, isSaved = false }) {
-  const score = scoreFromMinutes(venue.tribunesliter_minutes);
-  const tone = venueTone(venue);
   return (
-    <button className="venue-card" type="button" onClick={onClick}>
-      <div className={cx('score-badge', `score-badge--${tone}`)}>
-        <b>{score || '–'}</b>
-        <span>Score</span>
-      </div>
-      <div className="venue-card__body">
-        <strong>{venue.name}</strong>
-        <span>{venue.municipality} · {venue.address || venue.venue_type}</span>
-        <div className="tag-row">
-          <small className={cx('tag', venue.is_outdoor ? 'tag--blue' : 'tag--green')}>{venue.is_outdoor ? 'Utendørs' : 'Innendørs'}</small>
-          <small className="tag tag--neutral">{primarySport(venue)}</small>
-          <small className="tag tag--amber">★ {venue.review_count || 0}</small>
-          {isSaved && <small className="tag tag--green">Lagret</small>}
-        </div>
-        <div className="venue-card__foot">
-          {statusLines(venue).map((line) => <em key={line}>{line}</em>)}
-        </div>
-      </div>
+    <button className="overhaul-wide-venue overhaul-wide-venue--card" type="button" onClick={onClick}>
+      <span className="overhaul-score">{formatVenueScore(venue)}</span>
+      <span><strong>{venue.name}</strong><small>{venue.municipality} · {primarySport(venue)}{isSaved ? ' · Lagret' : ''}</small></span>
+      <i>›</i>
     </button>
   );
 }
 
-function VenueView({ venue, reviews, onBack, onRate, onReportFacility, isSaved, onToggleSaved, onShare }) {
+function VenueView({ venue, reviews, onBack, onRate, isSaved, onToggleSaved, onShare }) {
   const facilities = venue.facilities || {};
   const mapQuery = [venue.name, venue.address, venue.municipality].filter(Boolean).join(', ');
-  const score = scoreFromMinutes(venue.tribunesliter_minutes);
-  const progressStyle = { '--score': `${score}%` };
-  const facilityRows = FACILITY_DISPLAY_ROWS[venueRatingKind(venue.is_outdoor)].map((row) => [row.label, row.value(facilities), row.emoji]);
+  const kiosk = parseKioskDetails(facilities.kiosk_status);
+  const seat = venueSeatScore(venue);
+  const viewScore = venueViewScore(venue);
 
   return (
-    <section className="screen detail-screen">
+    <section className="screen detail-screen venue-overhaul-screen">
       <div className="detail-topbar">
         <button className="icon-button" type="button" onClick={onBack} aria-label="Tilbake"><Icon name="back" /></button>
-        <div className="detail-actions">
-          <button className="icon-button" type="button" aria-label="Del" onClick={onShare}><Icon name="share" /></button>
-          <button className={cx('icon-button', isSaved && 'icon-button--active')} type="button" aria-label={isSaved ? 'Fjern fra lagret' : 'Lagre'} onClick={onToggleSaved}><Icon name="heart" /></button>
-        </div>
+        <div className="detail-actions"><button className="icon-button" type="button" aria-label="Del" onClick={onShare}><Icon name="share" /></button><button className={cx('icon-button', isSaved && 'icon-button--active')} type="button" aria-label={isSaved ? 'Fjern fra lagret' : 'Lagre'} onClick={onToggleSaved}><Icon name="heart" /></button></div>
       </div>
-
-      <article className="venue-hero-card app-card">
-        <div className="tag-row tag-row--top">
-          <span className={cx('tag', venue.is_outdoor ? 'tag--blue' : 'tag--green')}>{venue.is_outdoor ? 'Utendørs' : 'Innendørs'}</span>
-          <span className="tag tag--neutral">{venue.venue_type}</span>
-          {venue.sport_tags?.slice(0, 2).map((tag) => <span className="tag tag--neutral" key={tag}>{tag}</span>)}
-        </div>
+      <div className="venue-overhaul-title">
+        <span className="eyebrow">{venue.is_outdoor ? 'Utendørsanlegg' : 'Innendørsanlegg'}</span>
         <h1>{venue.name}</h1>
-        <p>{venue.municipality} · {venue.address || 'Adresse ikke registrert'}</p>
-
-        <div className="score-hero">
-          <div className="score-ring" style={progressStyle}>
-            <strong>{score || '–'}</strong>
-            <span>/100</span>
-          </div>
-          <div>
-            <span className="caps-label">Tribunesliter-score</span>
-            <h2><RumpeText>Rumpa holder ~{venue.tribunesliter_minutes || '–'} min</RumpeText></h2>
-            <p>{venue.summary || deriveTribunesliterLabel(venue.tribunesliter_minutes || 0)}</p>
-            <small>★ {reviews.length || venue.review_count || 0} vurderinger</small>
-          </div>
-        </div>
-      </article>
-
-      {cushionAlarm(venue) && (
-        <div className="alert-card alert-card--amber">
-          <strong>🪑 Putealarm</strong>
-          <span>{deriveTribunesliterLabel(venue.tribunesliter_minutes || 0)}</span>
-        </div>
-      )}
-
-      <div className="subscore-row">
-        <SubScore label={ratingLabel('seating', facilities.seat_comfort)} value={facilities.seat_comfort} emoji={RUMPE_ICON} />
-        <SubScore label={venue.is_outdoor ? ratingLabel('weather', facilities.heating_level) : ratingLabel('temperature', facilities.heating_level)} value={facilities.heating_level} emoji={venue.is_outdoor ? '🌧️' : '🌡️'} />
-        <SubScore label={parkingLabel(facilities.parking)} value={PARKING_OPTIONS.indexOf(parkingLabel(facilities.parking)) + 1 || 3} emoji="🚗" />
+        <p>{venue.municipality} · {venue.address || primarySport(venue)}</p>
       </div>
 
-      <section className="panel app-card compact-info-grid">
-        <InfoCell label="Type" value={venue.venue_type} />
-        <InfoCell label="Underlag" value={venue.is_outdoor ? 'Ute' : 'Inne'} />
-        <InfoCell label="Idrett" value={venue.sport_tags?.join(', ') || 'Ukjent'} />
-        <InfoCell label="Sist bekreftet" value={venue.facility_reported_at ? shortDate(venue.facility_reported_at) : 'Mangler'} />
-        {mapQuery && (
-          <a className="map-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`} target="_blank" rel="noreferrer">
-            <Icon name="map" /> Åpne kart
-          </a>
-        )}
-      </section>
+      <div className="venue-score-grid-overhaul">
+        <article className="venue-score-card venue-score-card--primary"><span>🍑 Sitteplasser</span><b>{seat ? seat.toFixed(1) : '–'}</b><small>{seat ? ratingLabel('seating', seat) : 'Mangler vurdering'}</small></article>
+        <article className="venue-score-card"><span>👀 Utsikt</span><b>{viewScore ? viewScore.toFixed(1) : '–'}</b><small>{viewScore ? ratingLabel('view', viewScore) : 'Mangler vurdering'}</small></article>
+      </div>
+      <div className="venue-score-summary"><span>Tribunescore</span><strong>{formatVenueScore(venue)} / 5</strong><small>Kun sitteplass + utsikt</small></div>
 
-      <section className="panel app-card">
-        <SectionHeader title="Anleggsinfo" />
-        <div className="facility-grid">
-          {facilityRows.map(([label, value, emoji]) => (
-            <div className="facility-row" key={label}>
-              <span className="facility-row__icon"><IconGlyph icon={emoji || facilityEmoji(label)} /></span>
-              <span>{label}</span>
-              <strong>{value}</strong>
-            </div>
-          ))}
-        </div>
-        {facilities.notes && <p className="facility-note">{facilities.notes}</p>}
-      </section>
-
-      <section className="panel app-card panel--amber-soft">
-        <h2>Pakkeliste</h2>
-        <div className="pack-row">
-          {(venue.packlist || []).length ? (venue.packlist || []).map((item) => <span key={item}>{item}</span>) : <span>🪑 Ta med pute</span>}
+      <section className="overhaul-section">
+        <SectionHeader title="Praktisk" />
+        <div className="practical-grid-overhaul">
+          {facilities.seating_type && <div><span>🪑</span><strong>{facilities.seating_type}</strong><small>Sitteplass</small></div>}
+          <div><span>🅿️</span><strong>{facilities.parking ? parkingLabel(facilities.parking) : 'Ikke registrert'}</strong><small>Parkering</small></div>
+          <div><span>🧇</span><strong>{kiosk.status}</strong><small>Kiosk</small></div>
+          {mapQuery && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`} target="_blank" rel="noreferrer"><Icon name="map" /><strong>Åpne kart</strong><small>Veibeskrivelse</small></a>}
         </div>
       </section>
 
-      <section className="panel app-card">
-        <SectionHeader title="Siste vurderinger" action="Legg inn vurdering" onAction={onRate} />
+      <section className="overhaul-section kiosk-detail-overhaul app-card">
+        <SectionHeader title="Kiosk" action="Oppdater" onAction={onRate} />
+        <div className="kiosk-status-overhaul"><div><strong>🧇 Kiosk på kampdag</strong><small>Oppdatert av publikum</small></div><span>{kiosk.status}</span></div>
+        <div className="kiosk-detail-grid">
+          <div><span>Utvalg</span><strong>{kiosk.items.length ? kiosk.items.join(', ') : 'Ikke registrert'}</strong></div>
+          <div><span>Betaling</span><strong>{kiosk.payment}</strong></div>
+          <div><span>Kø</span><strong>{kiosk.queue}</strong></div>
+        </div>
+        {facilities.notes && <p>{facilities.notes}</p>}
+      </section>
+
+      <section className="overhaul-section">
+        <SectionHeader title="Siste vurderinger" action={`${reviews.length || venue.review_count || 0} totalt`} />
         <div className="review-list">
-          {reviews.length === 0 ? (
-            <EmptyState title="Ingen vurderinger enda" text="Bli første sliter som vurderer sitteplassen." action={<RumpeText>Vurder sitteplassen</RumpeText>} onAction={onRate} />
-          ) : (
-            reviews.map((review) => <ReviewCard review={review} venueIsOutdoor={venue.is_outdoor} key={review.id} />)
-          )}
+          {reviews.length ? reviews.map((review) => <ReviewCard review={review} key={review.id} />) : <EmptyState title="Ingen vurderinger enda" text="Bli første som vurderer sitteplass og utsikt." action="Vurder nå" onAction={onRate} />}
         </div>
       </section>
-
-      <div className="sticky-actions sticky-actions--single">
-        <button className="primary-action" type="button" onClick={onRate}><RumpeText>Vurder sitteplassen</RumpeText></button>
-      </div>
+      <div className="sticky-actions sticky-actions--single"><button className="primary-action" type="button" onClick={onRate}>🍑 Vurder sitteplass og utsikt</button></div>
     </section>
   );
 }
@@ -1903,208 +1967,87 @@ function SectionHeader({ title, action, onAction }) {
   );
 }
 
-function ReviewCard({ review, venueIsOutdoor = false }) {
-  const categoriesForReview = REVIEW_CATEGORIES[venueRatingKind(venueIsOutdoor)];
+function ReviewCard({ review }) {
   return (
-    <article className="review-card">
-      <div className="review-card__top">
-        <div className="review-avatar">{(review.user_name || review.display_name || 'B')[0]}</div>
-        <div>
-          <strong>{review.user_name || review.display_name || 'Innlogget bruker'}</strong>
-          <small>{review.event_type} · {shortDate(review.visit_date)}</small>
-        </div>
-        <span>{review.tribunesliter_minutes} min</span>
-      </div>
-      <p>{review.comment || 'Ingen kommentar. Men rumpa har talt.'}</p>
-      <div className="review-humor-tags">
-        {categoriesForReview.map((category) => (
-          <span key={category.key}><IconGlyph icon={category.icon} /> {ratingLabel(category.scale, review[category.key])}</span>
-        ))}
-      </div>
+    <article className="review-card review-card--overhaul">
+      <div className="review-card__top"><div className="review-avatar">{(review.user_name || review.display_name || 'B')[0]}</div><div><strong>{review.user_name || review.display_name || 'Innlogget bruker'}</strong><small>{review.event_type} · {shortDate(review.visit_date)}</small></div></div>
+      <div className="review-two-scores"><span>🍑 {Number(review.comfort_score || 0) || '–'}/5</span><span>👀 {Number(review.view_score || 0) || '–'}/5</span></div>
+      <p>{review.comment || 'Ingen kommentar.'}</p>
     </article>
   );
 }
 
 function RateView({ venues, selectedVenue, form, setForm, onSubmit, onNewVenue, onBack }) {
   const [venueSearch, setVenueSearch] = useState('');
+  const [kioskOpen, setKioskOpen] = useState(false);
   const selectedVenueId = form.venue_id || selectedVenue?.id || '';
   const selectedVenueFromForm = venues.find((venue) => venue.id === selectedVenueId);
-  const selectedMunicipality = form.venue_municipality || selectedVenueFromForm?.municipality || '';
-  const municipalities = useMemo(
-    () => [...new Set(venues.map((venue) => venue.municipality).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'nb')),
-    [venues]
-  );
   const filteredVenues = useMemo(() => {
-    const normalizedSearch = venueSearch.trim().toLowerCase();
-    return venues
-      .filter((venue) => !selectedMunicipality || venue.municipality === selectedMunicipality)
-      .filter((venue) => {
-        if (!normalizedSearch) return true;
-        return [venue.name, venue.address, venue.venue_type, venue.municipality, ...(venue.sport_tags || [])].join(' ').toLowerCase().includes(normalizedSearch);
-      })
-      .sort((a, b) => `${a.municipality} ${a.name}`.localeCompare(`${b.municipality} ${b.name}`, 'nb'));
-  }, [selectedMunicipality, venueSearch, venues]);
+    const term = venueSearch.trim().toLowerCase();
+    return venues.filter((venue) => !term || [venue.name, venue.municipality, venue.address, venue.venue_type, ...(venue.sport_tags || [])].filter(Boolean).join(' ').toLowerCase().includes(term)).sort((a,b) => a.name.localeCompare(b.name,'nb'));
+  }, [venues, venueSearch]);
 
-  function update(key, value) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-  function updateFacility(key, value) {
-    setForm((current) => ({ ...current, include_facilities: true, [key]: value }));
-  }
-  function updateUnified(field, value) {
-    setForm((current) => ({
-      ...current,
-      include_facilities: true,
-      [field.key]: value,
-      ...(field.facilityKey ? { [field.facilityKey]: value } : {}),
-    }));
-  }
-  function updateMunicipality(value) {
-    setForm((current) => {
-      const currentVenue = venues.find((venue) => venue.id === current.venue_id);
-      return {
-        ...current,
-        venue_municipality: value,
-        venue_id: currentVenue && currentVenue.municipality === value ? current.venue_id : '',
-      };
-    });
-  }
+  function update(key, value) { setForm((current) => ({ ...current, [key]: value })); }
   function updateVenue(value) {
     const venue = venues.find((item) => item.id === value);
-    setForm((current) => venue ? makeReviewFormForVenue(venue, current) : { ...current, venue_id: '', venue_municipality: current.venue_municipality });
+    setForm((current) => venue ? makeReviewFormForVenue(venue, current) : { ...current, venue_id: '' });
   }
-  function addTag(tag) {
+  function updateRating(key, facilityKey, value) {
+    setForm((current) => ({ ...current, [key]: value, [facilityKey]: value, tribunesliter_minutes: key === 'comfort_score' ? Math.max(5, Math.min(90, Number(value) * 15)) : current.tribunesliter_minutes, include_facilities: true }));
+  }
+  function updateKiosk(patch) {
     setForm((current) => {
-      const existing = current.comment || '';
-      return { ...current, comment: existing.includes(tag) ? existing : `${existing}${existing ? ' ' : ''}${tag}` };
+      const next = {
+        status: patch.kiosk_status_level ?? (current.kiosk_status_level || 'Sporadisk'),
+        items: patch.kiosk_items ?? current.kiosk_items ?? [],
+        payment: patch.kiosk_payment ?? (current.kiosk_payment || 'Vipps'),
+        queue: patch.kiosk_queue ?? (current.kiosk_queue || 'Litt kø'),
+      };
+      return { ...current, ...patch, facility_kiosk_status: encodeKioskDetails(next), include_facilities: true };
     });
   }
-
-  const venueIsOutdoor = Boolean(selectedVenueFromForm?.is_outdoor ?? selectedVenue?.is_outdoor);
-  const ratingKind = venueRatingKind(venueIsOutdoor);
-  const unifiedRatingFields = UNIFIED_RATING_FIELDS[ratingKind];
+  function toggleKioskItem(item) {
+    const items = form.kiosk_items || [];
+    updateKiosk({ kiosk_items: items.includes(item) ? items.filter((value) => value !== item) : [...items, item] });
+  }
 
   return (
-    <section className="screen detail-screen form-screen">
-      <FormHeader onBack={onBack} />
-      <form className="form-stack" onSubmit={onSubmit}>
-        <section className="form-card app-card">
-          <SectionHeader title="Besøk" />
-          <div className="two-cols">
-            <label>
-              Kommune
-              <select value={selectedMunicipality} onChange={(event) => updateMunicipality(event.target.value)} required>
-                <option value="">Velg kommune</option>
-                {municipalities.map((municipality) => <option value={municipality} key={municipality}>{municipality}</option>)}
-              </select>
-            </label>
-            <label>
-              Søk
-              <input value={venueSearch} onChange={(event) => setVenueSearch(event.target.value)} placeholder="Søk anlegg" />
-            </label>
-          </div>
-          <label>
-            Anlegg
-            <select value={selectedVenueId} onChange={(event) => updateVenue(event.target.value)} required>
-              <option value="">Velg anlegg</option>
-              {filteredVenues.map((venue) => <option value={venue.id} key={venue.id}>{venue.name}</option>)}
-            </select>
-          </label>
-          <button
-            className="inline-add-venue"
-            type="button"
-            onClick={() => onNewVenue({ name: venueSearch, municipality: selectedMunicipality })}
-          >
-            + Legg til nytt anlegg
-          </button>
-          {selectedMunicipality && filteredVenues.length === 0 && <p className="micro-copy">Ingen anlegg matcher søket i denne kommunen.</p>}
-          <div className="two-cols">
-            <label>
-              Type besøk
-              <select value={form.event_type} onChange={(event) => update('event_type', event.target.value)}>
-                <option>Kamp</option>
-                <option>Cup</option>
-                <option>Trening</option>
-                <option>Turnering</option>
-                <option>Annet</option>
-              </select>
-            </label>
-            <label>
-              Dato
-              <input type="date" value={form.visit_date} max={new Date().toISOString().slice(0, 10)} onChange={(event) => update('visit_date', event.target.value)} />
-            </label>
-          </div>
+    <section className="screen detail-screen rating-overhaul-screen">
+      <FormHeader title="Ny vurdering" onBack={onBack} />
+      <form className="rating-overhaul-form" onSubmit={onSubmit}>
+        <div className="rating-overhaul-title"><div className="rating-overhaul-icon"><InlineRumpeIcon /></div><div><h1>Hvordan var tribunen?</h1><p>{selectedVenueFromForm?.name || selectedVenue?.name || 'Velg et anlegg'}</p></div></div>
+        {!selectedVenueFromForm && (
+          <section className="field-card-overhaul"><label>Anlegg<input value={venueSearch} onChange={(event)=>setVenueSearch(event.target.value)} placeholder="Søk anlegg" /></label><select value={selectedVenueId} onChange={(event)=>updateVenue(event.target.value)} required><option value="">Velg anlegg</option>{filteredVenues.map((venue)=><option key={venue.id} value={venue.id}>{venue.name} · {venue.municipality}</option>)}</select><button type="button" className="inline-add-venue" onClick={()=>onNewVenue({name:venueSearch})}>+ Legg til nytt anlegg</button></section>
+        )}
+        <p className="lead">Bare to ting rates. Resten er praktisk info og påvirker ikke tribunescore.</p>
+
+        <HumorRating icon={RUMPE_ICON} label="Sitteplasser" scale="seating" value={Number(form.comfort_score)} onChange={(value)=>updateRating('comfort_score','facility_seat_comfort',value)} />
+        <HumorRating icon="👀" label="Utsikt" scale="view" value={Number(form.view_score)} onChange={(value)=>updateRating('view_score','facility_view_quality',value)} />
+
+        <section className="field-card-overhaul"><strong>🅿️ Parkering</strong><p>Praktisk info – ikke del av scoren.</p><div className="choice-row-overhaul">{PARKING_OPTIONS.map((option)=><button type="button" className={cx(parkingLabel(form.facility_parking)===option && 'selected')} key={option} onClick={()=>update('facility_parking',option)}>{option}</button>)}</div></section>
+
+        <section className={cx('kiosk-editor-overhaul', kioskOpen && 'open')}>
+          <button className="kiosk-editor-toggle" type="button" onClick={()=>setKioskOpen((value)=>!value)}><span><strong>🧇 Kiosk</strong><small>Egen utvidet meny</small></span><b>{kioskOpen ? 'Lukk −' : 'Åpne +'}</b></button>
+          {kioskOpen && <div className="kiosk-editor-content">
+            <ChoiceRow label="Status" options={KIOSK_STATUS_OPTIONS} value={form.kiosk_status_level} onChange={(value)=>updateKiosk({kiosk_status_level:value})} />
+            <div className="kiosk-checks"><label>Hva får du kjøpt?</label><div>{KIOSK_ITEM_OPTIONS.map(([name,emoji])=><button type="button" key={name} className={cx((form.kiosk_items||[]).includes(name) && 'selected')} onClick={()=>toggleKioskItem(name)}>{emoji} {name}</button>)}</div></div>
+            <ChoiceRow label="Betaling" options={KIOSK_PAYMENT_OPTIONS} value={form.kiosk_payment} onChange={(value)=>updateKiosk({kiosk_payment:value})} />
+            <ChoiceRow label="Kø i pausen" options={KIOSK_QUEUE_OPTIONS} value={form.kiosk_queue} onChange={(value)=>updateKiosk({kiosk_queue:value})} />
+            <label className="overhaul-textarea-label">Kiosknotat<textarea rows="3" value={form.facility_notes || ''} onChange={(event)=>update('facility_notes',event.target.value)} placeholder="F.eks. åpner bare ved A-lagskamp, gode vafler…" maxLength={MAX_NOTES_LENGTH} /></label>
+          </div>}
         </section>
 
-        <section className="form-card app-card form-card--dark">
-          <span className="caps-label">Rumpe-o-meter</span>
-          <div className="rumpe-meter">
-            <strong>{form.tribunesliter_minutes}</strong>
-            <span>minutter</span>
-          </div>
-          <p>{deriveTribunesliterLabel(form.tribunesliter_minutes)}</p>
-          <label className="range-label range-label--hero">
-            <span>0 ståplass</span><span>90 sofa</span>
-            <input
-              type="range"
-              min="5"
-              max="90"
-              value={form.tribunesliter_minutes}
-              onChange={(event) => update('tribunesliter_minutes', event.target.value)}
-            />
-          </label>
-        </section>
-
-        <section className="form-card app-card">
-          <label>
-            Sitteplass
-            <select value={form.facility_seating_type} onChange={(event) => updateFacility('facility_seating_type', event.target.value)}>
-              <option>Trebenk</option>
-              <option>Plastseter</option>
-              <option>Betongtribune</option>
-              <option>Ståtribune</option>
-              <option>Ingen tribune</option>
-              <option>Ta med egen stol</option>
-              <option>Annet</option>
-            </select>
-          </label>
-          <div className="toggle-row">
-            <Toggle checked={form.facility_has_backrest} onChange={(checked) => updateFacility('facility_has_backrest', checked)} label="Ryggstøtte" />
-            <Toggle checked={form.facility_roof_cover} onChange={(checked) => updateFacility('facility_roof_cover', checked)} label={venueIsOutdoor ? 'Tak / ly' : 'Tak/overbygg'} />
-          </div>
-          <div className="dice-grid">
-            {unifiedRatingFields.map((field) => (
-              <HumorRating
-                key={field.key}
-                icon={field.icon}
-                label={field.label}
-                scale={field.scale}
-                value={Number(form[field.key])}
-                onChange={(value) => updateUnified(field, value)}
-              />
-            ))}
-          </div>
-          <ChoicePills label="Kiosk / kaffe" icon="☕" value={kioskLabel(form.facility_kiosk_status)} options={KIOSK_OPTIONS} onChange={(value) => updateFacility('facility_kiosk_status', value)} />
-          <ChoicePills label="Parkering" icon="🚗" value={parkingLabel(form.facility_parking)} options={PARKING_OPTIONS} onChange={(value) => updateFacility('facility_parking', value)} />
-          <label>
-            Navn eller kallenavn
-            <input value={form.user_name} onChange={(event) => update('user_name', event.target.value)} placeholder="F.eks. tribunekonge" maxLength="40" required />
-          </label>
-          <label>
-            Kommentar
-            <textarea rows="5" value={form.comment} onChange={(event) => update('comment', event.target.value)} placeholder="Hva bør andre vite før de setter seg her?" maxLength={MAX_COMMENT_LENGTH} />
-          </label>
-          <div className="quick-tags">
-            {quickTags.map((tag) => <button type="button" key={tag} onClick={() => addTag(tag)}>{tag}</button>)}
-          </div>
-        </section>
-
-        <div className="sticky-actions sticky-actions--single">
-          <button className="primary-action" type="submit"><RumpeText>Send inn vurdering</RumpeText></button>
-        </div>
+        <section className="field-card-overhaul"><label className="overhaul-textarea-label">💬 Kommentar<textarea rows="4" value={form.comment} onChange={(event)=>update('comment',event.target.value)} placeholder="Hva bør neste tribunesliter vite?" maxLength={MAX_COMMENT_LENGTH} /></label></section>
+        <section className="rating-meta-overhaul"><label>Type besøk<select value={form.event_type} onChange={(event)=>update('event_type',event.target.value)}><option>Kamp</option><option>Cup</option><option>Trening</option><option>Turnering</option><option>Annet</option></select></label><label>Dato<input type="date" value={form.visit_date} max={new Date().toISOString().slice(0,10)} onChange={(event)=>update('visit_date',event.target.value)} /></label></section>
+        <label className="overhaul-name-label">Navn eller kallenavn<input value={form.user_name} onChange={(event)=>update('user_name',event.target.value)} placeholder="F.eks. tribunekonge" maxLength="40" required /></label>
+        <button className="submit-overhaul" type="submit">Send vurdering</button>
       </form>
     </section>
   );
+}
+
+function ChoiceRow({ label, options, value, onChange }) {
+  return <div className="choice-row-field-overhaul"><label>{label}</label><div>{options.map((option)=><button type="button" key={option} className={cx(value===option && 'selected')} onClick={()=>onChange(option)}>{option}</button>)}</div></div>;
 }
 
 function HumorRating({ icon, label, scale, value, onChange }) {
@@ -2265,7 +2208,7 @@ function ThanksView({ venue, onHome, onVenue }) {
       <div className="success-card app-card">
         <img className="thanks-icon" src={GLAD_RUMPE_ICON_SRC} alt="" aria-hidden="true" />
         <span className="tag tag--green">🏅 +10 sliter-poeng</span>
-        <h1>Numsen din er logget!</h1>
+        <h1>Tribunen er vurdert!</h1>
         <p>{venue ? `Vurderingen din er publisert for ${venue.name}.` : 'Vurderingen din er publisert.'}</p>
         <button className="primary-action" type="button" onClick={onVenue}>Se anlegget</button>
         <button className="secondary-action" type="button" onClick={onHome}>Til forsiden</button>
@@ -2368,15 +2311,10 @@ function ProfileView({ user, profile, canModerate, badgeProgress, notice, authBu
 
   return (
     <section className="screen">
-      <div className="profile-hero app-card">
-        <div className="profile-hero__icon" aria-hidden="true">
-          <InlineRumpeIcon />
-        </div>
-        <div>
-          <p className="eyebrow">Innstillinger</p>
-          <h1>Min tribuneprofil</h1>
-          <p>Logg inn, velg visningsnavn og se hvilke badges du er i ferd med å slite deg til.</p>
-        </div>
+      <div className="profile-overhaul-heading">
+        <span className="eyebrow">Profil og innstillinger</span>
+        <h1>Min tribuneprofil</h1>
+        <p>Innlogging først. Deretter bidrag, badgeprogresjon og appvalg.</p>
       </div>
 
       {user ? (
@@ -2737,10 +2675,10 @@ function EmptyState({ title, text, action, onAction }) {
 
 function BottomNav({ active, onNav, selectedVenue, savedCount }) {
   return (
-    <nav className="bottom-nav" aria-label="Hovedmeny">
+    <nav className="bottom-nav bottom-nav--overhaul" aria-label="Hovedmeny">
       <button className={cx(active === 'home' && 'active')} type="button" onClick={() => onNav('home')}><Icon name="home" /><span>Hjem</span></button>
-      <button className={cx(active === 'search' && 'active')} type="button" onClick={() => onNav('search')}><Icon name="search" /><span>Søk</span></button>
-      <button className="nav-fab" type="button" onClick={() => onNav('rate', selectedVenue?.id)} aria-label="Bidra"><span><Icon name="plus" /></span></button>
+      <button className={cx(active === 'explore' && 'active')} type="button" onClick={() => onNav('explore')}><Icon name="map" /><span>Kart</span></button>
+      <button className="nav-fab nav-fab--overhaul" type="button" onClick={() => onNav('rate', active === 'venue' ? selectedVenue?.id : undefined)} aria-label="Vurder"><span><Icon name="plus" /></span><small>Vurder</small></button>
       <button className={cx(active === 'saved' && 'active')} type="button" onClick={() => onNav('saved')}><Icon name="heart" /><span>Lagret{savedCount ? ` ${savedCount}` : ''}</span></button>
       <button className={cx(active === 'profile' && 'active')} type="button" onClick={() => onNav('profile')}><Icon name="user" /><span>Profil</span></button>
     </nav>

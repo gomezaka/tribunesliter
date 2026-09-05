@@ -42,11 +42,16 @@ export function getAnonymousDeviceId() {
 }
 
 function normalizeVenue(row) {
+  const facilities = row.facilities ?? row.latest_facility_report ?? {};
   return {
     ...row,
     sport_tags: row.sport_tags ?? [],
     packlist: row.packlist ?? [],
-    facilities: row.facilities ?? row.latest_facility_report ?? {},
+    facilities,
+    latitude: row.latitude == null ? null : Number(row.latitude),
+    longitude: row.longitude == null ? null : Number(row.longitude),
+    seat_score: Number(row.seat_score ?? row.avg_comfort_score ?? facilities.seat_comfort ?? 0),
+    view_score: Number(row.view_score ?? row.avg_view_score ?? facilities.view_quality ?? 0),
     tribunesliter_minutes: Number(row.tribunesliter_minutes ?? row.avg_tribunesliter_minutes ?? 0),
     review_count: Number(row.review_count ?? 0),
   };
@@ -357,6 +362,8 @@ export async function fetchVenues() {
         ? {
             tribunesliter_minutes: Math.round(allReviews.reduce((sum, review) => sum + Number(review.tribunesliter_minutes), 0) / allReviews.length),
             review_count: allReviews.length,
+            seat_score: allReviews.reduce((sum, review) => sum + Number(review.comfort_score || 0), 0) / allReviews.length,
+            view_score: allReviews.reduce((sum, review) => sum + Number(review.view_score || 0), 0) / allReviews.length,
           }
         : {};
       return latestFacility
@@ -389,7 +396,42 @@ export async function fetchVenues() {
     rows.push(...result.data);
   }
 
-  return rows.map(normalizeVenue);
+  async function fetchPaged(table, select, configure = (query) => query) {
+    const result = [];
+    for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+      let query = supabase.from(table).select(select).range(from, from + SUPABASE_PAGE_SIZE - 1);
+      query = configure(query);
+      const { data, error } = await query;
+      if (error) throw error;
+      result.push(...data);
+      if (data.length < SUPABASE_PAGE_SIZE) break;
+    }
+    return result;
+  }
+
+  const [coordinateRows, scoreRows] = await Promise.all([
+    fetchPaged('venues', 'id, latitude, longitude', (query) => query.eq('status', 'approved').order('id', { ascending: true })),
+    fetchPaged('approved_reviews_public', 'venue_id, comfort_score, view_score', (query) => query.order('venue_id', { ascending: true })),
+  ]);
+  const coordinates = new Map(coordinateRows.map((row) => [row.id, row]));
+  const scoreBuckets = new Map();
+  for (const row of scoreRows) {
+    const bucket = scoreBuckets.get(row.venue_id) || { seat: 0, view: 0, count: 0 };
+    bucket.seat += Number(row.comfort_score || 0);
+    bucket.view += Number(row.view_score || 0);
+    bucket.count += 1;
+    scoreBuckets.set(row.venue_id, bucket);
+  }
+
+  return rows.map((row) => {
+    const bucket = scoreBuckets.get(row.id);
+    return normalizeVenue({
+      ...row,
+      ...(coordinates.get(row.id) || {}),
+      seat_score: bucket?.count ? bucket.seat / bucket.count : undefined,
+      view_score: bucket?.count ? bucket.view / bucket.count : undefined,
+    });
+  });
 }
 
 export async function createVenue(venue) {
@@ -473,6 +515,13 @@ export async function fetchReviews(venueId) {
   return data.map(normalizeReview);
 }
 
+function optionalRating(...values) {
+  const candidate = values.find((value) => value !== null && value !== undefined && value !== '');
+  if (candidate === undefined) return null;
+  const numeric = Number(candidate);
+  return Number.isFinite(numeric) && numeric >= 1 && numeric <= 5 ? numeric : null;
+}
+
 function buildFacilityPayload(review, userId, options = {}) {
   const publish = Boolean(options.publish);
   return {
@@ -481,16 +530,16 @@ function buildFacilityPayload(review, userId, options = {}) {
     anonymous_device_id: getAnonymousDeviceId(),
     user_name: cleanUserName(review.user_name) || null,
     seating_type: review.facility_seating_type || review.seating_type || null,
-    seat_comfort: Number(review.facility_seat_comfort || review.seat_comfort || review.comfort_score || 3),
+    seat_comfort: optionalRating(review.facility_seat_comfort, review.seat_comfort, review.comfort_score),
     has_backrest: Boolean(review.facility_has_backrest ?? review.has_backrest),
-    heating_level: Number(review.facility_heating_level || review.heating_level || review.temperature_score || 3),
-    toilet_quality: Number(review.facility_toilet_quality || review.toilet_quality || 3),
+    heating_level: optionalRating(review.facility_heating_level, review.heating_level),
+    toilet_quality: optionalRating(review.facility_toilet_quality, review.toilet_quality),
     kiosk_status: review.facility_kiosk_status || review.kiosk_status || null,
     parking: review.facility_parking || review.parking || null,
-    accessibility: Number(review.facility_accessibility || review.accessibility || review.accessibility_score || 3),
+    accessibility: optionalRating(review.facility_accessibility, review.accessibility),
     roof_cover: Boolean(review.facility_roof_cover ?? review.roof_cover),
-    view_quality: Number(review.facility_view_quality || review.view_quality || review.view_score || 3),
-    noise_level: Number(review.facility_noise_level || review.noise_level || 3),
+    view_quality: optionalRating(review.facility_view_quality, review.view_quality, review.view_score),
+    noise_level: optionalRating(review.facility_noise_level, review.noise_level),
     notes: cleanLimitedText(review.facility_notes || review.notes, MAX_NOTES_LENGTH) || null,
     approved: publish,
     status: publish ? 'approved' : 'pending',
